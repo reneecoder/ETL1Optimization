@@ -1,0 +1,8 @@
+aux_source_directory(. MAIN_SRCS)
+include_directories(${PROJECT_SOURCE_DIR})
+set(Ceres_DIR /home/lixinyan/ceres/lib/cmake/Ceres)
+find_package(Ceres REQUIRED)
+include_directories(${PROJECT_SOURCE_DIR} ${EIGEN3_INCLUDE_DIR})
+include_directories(${CERES_INCLUDE_DIRS} )
+add_executable(${PROJECT_NAME} main.cpp BA.h BA.cpp sba_L1_smoothing.h sba_L1_smoothing.cpp sba_motstr_l1norm.h sba_motstr_l1norm.cpp)
+target_link_libraries(${PROJECT_NAME} ${CERES_LIBRARIES})

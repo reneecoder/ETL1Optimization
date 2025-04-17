@@ -1,0 +1,3035 @@
+
+#include <iostream>
+#include <fstream> // file
+#include "ceres/ceres.h"
+#include "ceres/problem.h"
+#include "BA.h"
+//#include "LeastSquareMethod.h"
+#include "matrix/matrix.h"
+#include <ctime>
+
+using namespace std;
+
+Eigen::Vector3f FitterLeastSquareMethod(std::vector<std::vector<double>> &X, std::vector<double> &Y, uint8_t orders)
+{
+
+    // abnormal input verification
+//    if (X.size() < 2 || Y.size() < 2 || X.size() != Y.size() || orders < 1)
+//        exit(EXIT_FAILURE);
+
+//    std::cout<<X.size()<<" "<<Y.size()<<std::endl;
+    Eigen::VectorXf result;
+    std::vector<float> X_l;
+    std::vector<float> Y_l;
+    Eigen::MatrixXf A(X.size(), 3);
+    Eigen::MatrixXf b(Y.size(), 1);
+//    A<<1,2,3 ,2,4,5,6,7,8,4,5,6;
+    // map sample data from STL vector to eigen vector
+    for(int i=0;i<X.size();i++)
+    {
+        A.row(i)<<X[i][0],X[i][1],X[i][2];
+        for(int j=0;j<3;j++)
+        {
+            X_l.push_back(X[i][j]);
+//            A<<X[i][j];
+        }
+    }
+    for(int i=0;i<Y.size();i++)
+    {
+        b.row(i)<<Y[i];
+        Y_l.push_back(Y[i]);
+    }
+
+    Eigen::Vector3f x = A.colPivHouseholderQr().solve(b);
+//    std::cout << "The solution is:\n" << x << std::endl;
+//    std::cout<<" x:"<<x[0]<<" y:"<<x[1]<<" z:"<<x[2]<<std::endl;
+//    std::cout << "Here is the matrix A:\n" << A << std::endl;
+    Eigen::Map<Eigen::VectorXf> sampleX(X_l.data(), X_l.size());
+    Eigen::Map<Eigen::VectorXf> sampleY(Y_l.data(), Y_l.size());
+//        std::cout<<sampleX.size()<<" "<<sampleY.size()<<std::endl;
+//    Eigen::Map<Eigen::VectorXf> sampleY(Y.data(), Y.size());
+//
+//    Eigen::MatrixXf mtxVandermonde(X.size(), orders + 1);  // Vandermonde matrix of X-axis coordinate vector of sample data
+//    Eigen::VectorXf colVandermonde = sampleX;              // Vandermonde column
+//
+//    // construct Vandermonde matrix column by column
+//    for (size_t i = 0; i < orders + 1; ++i)
+//    {
+//        if (0 == i)
+//        {
+//            mtxVandermonde.col(0) = Eigen::VectorXf::Constant(X.size(), 1, 1);
+//            continue;
+//        }
+//        if (1 == i)
+//        {
+//            mtxVandermonde.col(1) = colVandermonde;
+//            continue;
+//        }
+//        colVandermonde = colVandermonde.array()*sampleX.array();
+//        mtxVandermonde.col(i) = colVandermonde;
+//    }
+//
+//    // calculate coefficients vector of fitted polynomial
+//    Eigen::VectorXf result = (mtxVandermonde.transpose()*mtxVandermonde).inverse()*(mtxVandermonde.transpose())*sampleY;
+//
+    return x;
+}
+
+util::point3d triangulate(std::vector<CameraParameters> cameras, std::vector<util::point2d> points)
+{
+//    for()
+//    std::cout<<"camera_i:"<<camera_i.size()<<std::endl;
+//    std::cout<<"point_i:"<<point_i.size()<<std::endl;
+    int num_eqs = 2*points.size();
+    int num_vars = 3;
+
+    double *As = new double[num_eqs*num_vars];
+    double *bs = new double[num_eqs];
+
+    std::vector<std::vector<double>> A_l;
+//    std::vector<std::vector<double>> b_l;
+    std::vector<double> b_l;
+
+
+    double *x = new double[num_vars];
+
+    for(int i=0;i<points.size();i++)
+    {
+        double s, alpha, beta, gamma, t0, t1;
+
+        std::vector<double > a1;
+        std::vector<double > a2;
+
+        s = cameras[i].s;
+        alpha = cameras[i].alpha;
+        beta = cameras[i].beta;
+        gamma = cameras[i].gamma;
+        t0 = cameras[i].t0;
+        t1 = cameras[i].t1;
+
+        double cos_alpha = cos(alpha);
+        double sin_alpha = sin(alpha);
+        double cos_beta = cos(beta);
+        double sin_beta = sin(beta);
+        double cos_gamma = cos(gamma);
+        double sin_gamma = sin(gamma);
+
+        double* A = As+6*i;
+        double* b = bs+2*i;
+
+
+        a1.push_back(cos_beta);
+        a1.push_back(sin_alpha*sin_beta);
+        a1.push_back(-cos_alpha*sin_beta);
+
+        a2.push_back(0);
+        a2.push_back(cos_alpha);
+        a2.push_back(sin_alpha);
+
+        A_l.push_back(a1);
+        A_l.push_back(a2);
+
+
+//        std::cout<<" "<<A[i]<<" ";
+
+        b[0] = s*(cos_gamma*points[i].x+sin_gamma*points[i].y+t0);
+        b[1] = s*(-sin_gamma*points[i].x+cos_gamma*points[i].y+t1);
+
+        b_l.push_back(b[0]);
+        b_l.push_back(b[1]);
+    }
+
+    std::vector<float> A_tmp;
+    std::vector<float> B_tmp;
+
+    for(int i=0;i<num_eqs*num_vars;i++)
+    {
+        A_tmp.push_back(As[i]);
+    }
+    for(int i=0;i<num_eqs;i++)
+    {
+        B_tmp.push_back(bs[i]);
+    }
+
+
+    Eigen::Vector3f result(FitterLeastSquareMethod(A_l, b_l, 3));
+//
+//    dgelsy_driver(As, bs, x, num_eqs, num_vars, 1);
+
+
+    util::point3d tmp;
+
+
+
+    tmp.x=result[0];
+    tmp.y=result[1];
+    tmp.z=result[2];
+    return tmp;
+}
+
+
+
+std::vector<util::point3d> Process(double percent, init_CameraParameters camera_parameter, std::vector<std::vector<util::point2d>> match_point_main)
+{
+    int n3Dpts=match_point_main.size(), ncams=camera_parameter.cam.size();
+    int length_thre = int (percent*camera_parameter.cam.size());
+    std::cout<<"length_thre:"<<length_thre<<std::endl;
+    std::vector<util::point3d> point_move;   //存储三角化后的3D点
+    std::vector<std::vector<util::point2d>> list_m;       //存储满足条件的第i条链
+
+
+
+    int num_3D=0;
+    for(int i=0;i<n3Dpts;i++)
+    {
+        int count=0;
+        for(int j=0;j<ncams;j++)
+        {
+//            std::cout<<"x:"<<match_point_main[i][j].x<<"y:"<<match_point_main[i][j].y<<" ";
+            if(match_point_main[i][j].x!=0 &&match_point_main[i][j].y!=0)
+            {
+                count++;
+            }
+        }
+//        std::cout<<"cout:"<<count<<std::endl;
+        if(count>=length_thre)
+        {
+            std::vector<CameraParameters> camera_i;
+            std::vector<util::point2d> point_i;
+            num_3D++;
+            list_m.push_back(match_point_main[i]);
+            for(int j=0;j<ncams;j++)
+            {
+                if(match_point_main[i][j].x!=0 &&match_point_main[i][j].y!=0)
+                {
+//                    std::cout<<" x:"<<match_point_main[i][j].x<<" y:"<<match_point_main[i][j].y<<" ";
+                    point_i.push_back(match_point_main[i][j]);
+                    camera_i.push_back(camera_parameter.cam[j]);
+                }
+            }
+            util::point3d threepoint = triangulate(camera_i, point_i);
+
+            point_move.push_back(threepoint);
+        }
+    }
+
+//    for(int i=0;i<point_move.size();i++)
+//    {
+//        std::cout<<" x:"<<point_move[i].x<<" y:"<<point_move[i].y<<" z:"<<point_move[i].z<<std::endl;
+//    }
+
+    return point_move;
+
+
+
+}
+
+void Addoutliers(std::vector<util::point3d>& Point3D_true, std::vector<std::vector<double>>& Camera_new, std::vector<util::point2d>& Point2D_noise, std::vector<util::point2d>& Point2D_true, std::vector<util::point2d>& img_dis_tmp, std::vector<std::vector<double>>& Camera_noise, int ncams, int n3Dpts, bool noise, std::vector<int>& vmask_new)
+{
+    const int cmp=6;
+    double percent=0.3;  //离群点所占比
+//    double *imgpts_tmp=nullptr;
+    double *imgpts_tmp = new double[n3Dpts*ncams*2];
+    double *motstr_tmp = new double[n3Dpts*3+cmp*ncams];
+    double *Point3D=new double[n3Dpts*3];
+
+
+    std::vector<util::point2d> true_point2d;
+
+    for(int i=0;i<n3Dpts;i++)
+    {
+        Point3D[3*i]=Point3D_true[i].x;
+        Point3D[3*i+1]=Point3D_true[i].y;
+        Point3D[3*i+2]=Point3D_true[i].z;
+    }
+    init_CameraParameters Camera;
+
+    for(int i=0;i<ncams;i++)
+    {
+        CameraParameters cam;
+        cam.s=Camera_new[i][0];
+        cam.alpha=Camera_new[i][1];
+        cam.beta=Camera_new[i][2];
+        cam.gamma=Camera_new[i][3];
+        cam.t0=Camera_new[i][4];
+        cam.t1=Camera_new[i][5];
+
+        Camera.cam.push_back(cam);
+    }
+
+    std::vector<int> vmask;
+    for(int i=0;i<n3Dpts;i++)
+    {
+        util::point2d tmp_2d;
+        Eigen::Vector3d tmp_3d=Eigen::Vector3d(Point3D[3*i],Point3D[3*i+1],Point3D[3*i+2]);
+        for(int j=0;j<ncams;j++)
+        {
+            CameraParameters cam_tmp=Camera.cam[j];
+//             std::cout<<cam_tmp.s<<" "<<cam_tmp.alpha<<" "<<cam_tmp.beta<<" "<<cam_tmp.gamma<<" "<<std::endl;
+            tmp_2d = cam_tmp.Project(tmp_3d);
+            true_point2d.push_back(tmp_2d);
+            vmask.push_back(1);
+            vmask_new.push_back(1);
+        }
+    }
+
+//     std::cout<<true_point2d.size();
+
+//     for(int i=0;i<true_point2d.size();i++)
+//     {
+//         std::cout<<true_point2d[i].x<<"    "<<true_point2d[i].y<<std::endl;
+//     }
+
+
+    std::vector<int> point_sum;
+    for(int i=0;i<n3Dpts*ncams;i++)
+    {
+        point_sum.push_back(i);
+    }
+
+    srand((unsigned)time(NULL));
+    std::random_shuffle(point_sum.begin(), point_sum.end());
+    int noise_num = ncams*n3Dpts*percent;
+    std::vector<int> noise_ord;    //存储加噪声二维点的数据编号
+    std::vector<int> true_ord;    //存储真实点二维点的数据编号
+    std::vector<double> W_init;
+    std::cout<<"离群点序号:"<<std::endl;
+    for(int i=0;i<noise_num;i++)
+    {
+//        dis_num.push_back((rand()%(high-low+1))+ low);
+         noise_ord.push_back(point_sum[i]);
+         std::cout<<point_sum[i]<<", ";
+        if(i%20==0) std::cout<<std::endl;
+    }
+
+    std::cout<<std::endl;
+    std::cout<<"真实值序号:"<<std::endl;
+    for(int i=noise_num;i<point_sum.size();i++)
+    {
+//        dis_num.push_back((rand()%(high-low+1))+ low);
+        true_ord.push_back(point_sum[i]);
+//        noise_ord.push_back(point_sum[i]);
+        std::cout<<point_sum[i]<<", ";
+        if(i%20==0) std::cout<<std::endl;
+    }
+
+    std::string noise_ord_file = "/home/xzh/文档/simulate/BA_Ceres_outliers_part_gai/BA_Ceres_outliers_part_gai/data/noise_ord.txt";
+    std::ofstream outputfile_noise_ord(noise_ord_file);
+
+    std::string true_ord_file = "/home/xzh/文档/simulate/BA_Ceres_outliers_part_gai/BA_Ceres_outliers_part_gai/data/true_ord.txt";
+    std::ofstream outputfile_true_ord(true_ord_file);
+
+    for(int i=0;i<noise_ord.size();i++)
+    {
+        outputfile_noise_ord<<noise_ord[i]<<", ";
+        if(i%20==0) outputfile_noise_ord<<"\n";
+    }
+
+    for(int i=0;i<true_ord.size();i++)
+    {
+        outputfile_true_ord<<true_ord[i]<<", ";
+        if(i%20==0) outputfile_true_ord<<"\n";
+    }
+
+    outputfile_noise_ord.close();
+    outputfile_true_ord.close();
+
+
+
+     std::cout<<std::endl;
+    std::cout<<true_ord.size()+noise_ord.size()<<std::endl;
+//     std::cout<<true_point2d.size()<<std::endl;
+
+    std::vector<util::point2d> noise_point2d;
+    std::vector<int > outliers_ord;
+    for(int i=0;i<true_point2d.size();i++)
+    {
+        util::point2d p;
+        bool noise_add=false;
+        for(int tmp = 0;tmp<noise_ord.size();tmp++)
+        {
+            if(i == noise_ord[tmp])
+            {
+                if(i%ncams<ncams*0.1 || i%ncams>(ncams-ncams*0.1))
+                {
+                    p.x=true_point2d[i].x+Sample::gaussian(50);
+                    p.y=true_point2d[i].y+Sample::gaussian(50);
+//                     p.x=true_point2d[i].x+Sample::gaussian(100);
+//                     p.y=true_point2d[i].y+Sample::gaussian(100);
+                }else{
+                    p.x=true_point2d[i].x+Sample::gaussian(40);
+                    p.y=true_point2d[i].y+Sample::gaussian(40);
+//                     p.x=true_point2d[i].x+Sample::gaussian(80);
+//                     p.y=true_point2d[i].y+Sample::gaussian(80);
+                }
+//                 std::cout<<Sample::gaussian(50)<<std::endl;
+//                p.x=true_point2d[i].x+Sample::gaussian(30);
+//                p.y=true_point2d[i].y+Sample::gaussian(30);
+                outliers_ord.push_back(i);
+                noise_add= true;
+                W_init.push_back(0.6);
+                break;
+            }
+        }
+        if(!noise_add)
+        {
+            p.x=true_point2d[i].x;
+            p.y=true_point2d[i].y;
+            W_init.push_back(1);
+        }
+        noise_point2d.push_back(p);
+        Point2D_noise.push_back(p);
+    }
+    std::string filename = "/home/xzh/文档/simulate/BA_Ceres_outliers_part_gai/BA_Ceres_outliers_part_gai/data/true_2d.txt";
+    std::ofstream outputfile(filename);
+
+    std::string filename1 = "/home/xzh/文档/simulate/BA_Ceres_outliers_part_gai/BA_Ceres_outliers_part_gai/data/noise_2d.txt";
+    std::ofstream outputfile1(filename1);
+
+    for(int i=0;i<true_point2d.size();i++)
+    {
+        outputfile<< true_point2d[i].x<<"    "<<true_point2d[i].y<<std::endl;
+        outputfile1<< noise_point2d[i].x<<"    "<<noise_point2d[i].y<<std::endl;
+    }
+    outputfile.close();
+    outputfile1.close();
+
+    Point2D_true=true_point2d;
+
+//     std::vector<std::vector<double>> Camera_noise;
+    if(noise){
+        for(int i=0;i<ncams;i++)
+        {
+            std::vector<double> cam_tmp;
+            cam_tmp.push_back(Camera_new[i][0]+Sample::gaussian(0.01));
+            cam_tmp.push_back(Camera_new[i][1]+Sample::gaussian(0.01));
+            cam_tmp.push_back(Camera_new[i][2]+Sample::gaussian(0.01));
+            cam_tmp.push_back(Camera_new[i][3]+Sample::gaussian(0.01));
+            cam_tmp.push_back(Camera_new[i][4]+Sample::gaussian(30));
+            cam_tmp.push_back(Camera_new[i][5]+Sample::gaussian(30));
+
+            Camera_noise.push_back(cam_tmp);
+        }
+    }
+    else{
+        Camera_noise = Camera_new;
+    }
+
+    int dis=n3Dpts*ncams*0.1;    //点链的丢失点
+//    std::cout<<"dis:"<<dis<<std::endl;
+    int low=0;
+    int high=n3Dpts*ncams;
+//    int high=300;
+
+    std::vector<int> dis_num;
+    srand((unsigned)time(NULL));     //  类似于随机种子
+    std::random_shuffle(point_sum.begin(), point_sum.end());
+    for(int i=0;i<dis;i++)
+    {
+//        dis_num.push_back((rand()%(high-low+1))+ low);
+        dis_num.push_back(point_sum[i]);
+        vmask[point_sum[i]]=0;
+        vmask_new[point_sum[i]]=0;
+//        std::cout<<point_sum[i]<<"    ";
+    }
+//    std::cout<<std::endl;
+
+    std::vector<util::point2d> img_dis;
+
+    for(int i=0;i<Point2D_noise.size();i++)
+    {
+        if(vmask[i])
+        {
+            img_dis.push_back(Point2D_noise[i]);
+        }
+    }
+
+    std::string filename2 = "/home/xzh/文档/simulate/BA_Ceres_outliers_part_gai/BA_Ceres_outliers_part_gai/data/img_dis.txt";
+    std::ofstream outputfile2(filename2);
+
+    for(int i=0;i<img_dis.size();i++)
+    {
+        outputfile2<< img_dis[i].x<<"    "<<img_dis[i].y<<std::endl;
+    }
+    outputfile2.close();
+
+    img_dis_tmp=img_dis;
+//    vmask_new = vmask;
+
+//    std::cout<<img_dis.size()<<std::endl;
+//    std::cout<<Point2D_noise.size()<<std::endl;
+
+//    std::cout<<vmask.size()<<std::endl;
+
+//    for(int i=0;i<vmask.size();i++)
+//    {
+//        std::cout<<vmask[i]<<std::endl;
+//    }
+
+
+
+
+
+
+//     for(int i=0;i<Camera_noise.size();i++)
+//     {
+//         std::cout<<Camera_noise[i][0]<<std::endl;
+//     }
+
+
+
+}
+
+
+double func_weight(double dij)
+{
+    if(dij < 0) return 1;
+    else if(dij >1) return 0;
+    else return (1 - dij *dij) * (1 - dij *dij);
+}
+
+double get_median_tmp(std::vector<double> mjlist)
+{
+    double median = 0.0;
+    std::vector<double> tmp;
+    for(int i = 0;i<mjlist.size();i++)
+    {
+        if(mjlist[i] !=0 ) tmp.push_back(mjlist[i]);
+//        std::cout << mjlist[i]<<" ";
+    }
+        std::sort(tmp.begin(), tmp.end());
+    int n=tmp.size();
+//    std::cout << std::endl;
+    if(mjlist.size()%2!=0) median = mjlist[mjlist.size()*0.5];
+    else {
+        median = (tmp[n / 2] + tmp[n / 2 - 1]) / 2;
+    }
+    return median;
+//    std::cout<<"median:" << median;
+//    std::cout << std::endl;
+}
+
+
+double get_median(std::vector<double> mjlist)
+{
+    double median = 0.0;
+    int n=mjlist.size();
+    std::sort(mjlist.begin(), mjlist.end());
+//    for(int i = 0;i<mjlist.size();i++)
+//    {
+//        std::cout << mjlist[i]<<" ";
+//    }
+//    std::cout << std::endl;
+    if(mjlist.size()%2!=0) median = mjlist[mjlist.size()*0.5];
+    else {
+        median = (mjlist[n / 2] + mjlist[n / 2 - 1]) / 2;
+    }
+    return median;
+//    std::cout<<"median:" << median;
+//    std::cout << std::endl;
+}
+
+// std::vector<std::vector<double>> MAND(double *motstr, double *imgpts, char *vmask, int ncams, int n3Dpts, bool choose_part){
+//
+//     const int cmp=6;
+//     init_CameraParameters Camera;
+//     double *Point3D=new double[n3Dpts*3];
+//
+//     std::vector<double> ei_list;  // 储存每个点对应的ei(残差平方和列表的平均值)
+// //    double *mp_list = new double[n3Dpts*ncams]; // 储存每个点对应链的mp(残差值中位数)
+//     std::vector<double> mp_list; // 储存每个点对应链的mp(残差值中位数)
+//     std::vector<double> ma_list;  // 储存所有点的ei/mp的中位数
+//     double *MADN_list = new double[n3Dpts*ncams];  // 储存每个点对应的MADN
+//     double *di_list = new double[n3Dpts*ncams];  // 储存每个点对应的di
+// //    double *e_squares_list = new double[n3Dpts*ncams]; // 储存平方和列表,一行表示一个点对应链的平方和
+//     std::vector<std::vector<double> > eimp_list;
+//     std::vector<std::vector<double> > e_squares_list;
+//
+//     for(int i=0;i<n3Dpts;i++)
+//     {
+//         Point3D[3*i]=motstr[ncams*6+3*i];
+//         Point3D[3*i+1]=motstr[ncams*6+3*i+1];
+//         Point3D[3*i+2]=motstr[ncams*6+3*i+2];
+//     }
+//
+//     for(int i=0;i<ncams;i++)
+//     {
+//         CameraParameters cam_tmp;
+//         cam_tmp.s=motstr[i*6];
+//         cam_tmp.alpha=motstr[i*6+1];
+//         cam_tmp.beta=motstr[i*6+2];
+//         cam_tmp.gamma=motstr[i*6+3];
+//         cam_tmp.t0=motstr[i*6+4];
+//         cam_tmp.t1=motstr[i*6+5];
+//         Camera.cam.push_back(cam_tmp);
+//     }
+//
+//     std::vector<double> f, u;
+//     int gap = 0;
+//     double e = 0;
+//     for(int i=0;i<n3Dpts;i++)
+//     {
+//         util::point2d p;
+//         Eigen::Vector3d point_tmp=Eigen::Vector3d(Point3D[3*i],Point3D[3*i+1],Point3D[3*i+2]);
+// //        std::cout<<"Point"<<i<<std::endl;
+//         std::vector<double> residual_list_ipoints;
+//         for(int j=0;j<ncams;j++)
+//         {
+//             double x_o,y_o;
+//             CameraParameters cam_tmp = Camera.cam[j];
+// //            std::cout << "s:"<<cam_tmp.s<<" alpha:"<<cam_tmp.alpha
+// //                      <<" beta:"<<cam_tmp.beta<<" gamma:"<<cam_tmp.gamma
+// //                      <<" t0:"<<cam_tmp.t0<<" t1:"<<cam_tmp.t1<<std::endl;
+// //            std::cout<<"X:"<<point_tmp[0]<<" Y:"<<point_tmp[1]<<" Z:"<<point_tmp[2]<<std::endl;
+//             p = cam_tmp.Project(point_tmp);
+// //            std::cout<<"x:"<<p.x<<" y:"<<p.y<<std::endl;
+//             if(vmask[i*ncams+j]){
+//                 x_o=imgpts[i*(ncams*2)+2*j+0-gap*2];
+//                 y_o=imgpts[i*(ncams*2)+2*j+1-gap*2];
+//                 u.push_back(x_o);
+//                 u.push_back(y_o);
+//
+//                 f.push_back(p.x);
+//                 f.push_back(p.y);
+//
+//                 e=(p.x-x_o)*(p.x-x_o)+(p.y-y_o)*(p.y-y_o);
+//
+//                 residual_list_ipoints.push_back(e);
+// //                e_squares_list[i]
+//             }
+//             else{
+//                 f.push_back(0.0);
+//                 f.push_back(0.0);
+//                 u.push_back(0.0);
+//                 u.push_back(0.0);
+//                 gap++;
+//
+//                 residual_list_ipoints.push_back(0);
+//             }
+//         }
+//         e_squares_list.push_back(residual_list_ipoints);
+//     }
+//
+//     for(int i=0;i<e_squares_list.size();i++){
+//         std::vector<double> e_tmp;
+//         for(int j=0;j<e_squares_list[i].size();j++){
+//             std::cout<<e_squares_list[i][j]<<"     ";
+//         }
+//         std::cout<<std::endl;
+//     }
+//
+//     for(int i=0;i<e_squares_list[0].size();i++){
+//         double median=0;
+//         std::vector<double> e_tmp;
+//         for(int j=0;j<e_squares_list.size();j++){
+// //            if(e_squares_list[j][i]!=0)
+// //            {
+// //                e_tmp.push_back(e_squares_list[j][i]);
+// //            }
+//             e_tmp.push_back(e_squares_list[j][i]);
+//         }
+// //        std::cout<<"size:"<<i<<" "<<e_tmp.size()<<std::endl;
+// //        std::cout<<"e_squares_list"<<i<<std::endl;
+//         median=get_median(e_tmp);
+// ////        std::cout<<std::endl;
+// //        std::cout<<"median:"<<median<<std::endl;
+//         mp_list.push_back(median);   //每个视图的残差
+//     }
+//
+// //    std::cout<<"mp_list:"<<mp_list.size()<<std::endl;
+//
+//     for(int i=0;i<n3Dpts;i++){
+//         double ma = 0.0;
+//         double median = 0.0;
+//         std::vector<double> eimp_i;
+//         for(int j=0;j<ncams;j++){
+//             if(mp_list[j])
+//             {
+// //                if(e_squares_list[i][j]!=0)
+// //                {
+// //                    ma=e_squares_list[i][j]/mp_list[j];
+// ////                    std::cout<<ma<<std::endl;
+// //                    eimp_i.push_back(ma);
+// //                }
+//                 ma=e_squares_list[i][j]/mp_list[j];
+// //                    std::cout<<ma<<std::endl;
+//                 eimp_i.push_back(ma);
+// //                std::cout<<"e_squares_list[i][j]:"<<e_squares_list[i][j]<<std::endl;
+//             } else eimp_i.push_back(0);
+//         }
+//         median=get_median(eimp_i);
+//         ma_list.push_back(median);
+//         eimp_list.push_back(eimp_i);
+//     }
+//
+// //    for(int i=0;i<ma_list.size();i++)
+// //    {
+// //        std::cout<<ma_list[i]<<std::endl;
+// //    }
+//
+//     for(int i=0;i<n3Dpts;i++){
+//         for(int j=0;j<ncams;j++){
+// //            if(e_squares_list[i][j]!=0)
+// //            {
+// //                ei_list.push_back(e_squares_list[i][j]);
+// //            }
+//             ei_list.push_back(e_squares_list[i][j]);
+//         }
+//     }
+//
+// //    std::vector<std::vector<double>> E_MADN_list;
+//     std::vector<double> E_MADN_list;
+//     std::vector<std::vector<double> > ej_list;
+//     std::cout<<"ei_list:"<<e_squares_list.size()<<std::endl;
+//     for(int i=0;i<ncams;i++)
+//     {
+//         std::vector<double> ej;
+//         for(int j=0;j<n3Dpts;j++)
+//         {
+//             ej.push_back(e_squares_list[j][i]);
+//         }
+//         ej_list.push_back(ej);
+//     }
+//
+// //    std::cout<<"ej_list:"<<ej_list.size()<<std::endl;
+//
+//     for(int i=0;i<ej_list.size();i++)
+//     {
+//         double med = get_median_tmp(ej_list[i]);
+//         std::vector<double> abs_x_med_j;
+//         for(int j=0;j<ej_list[i].size();j++)
+//         {
+//             if(ej_list[i][j]!=0) abs_x_med_j.push_back(abs(ej_list[i][j]-med));
+// //            abs_x_med_j.push_back(abs(ej_list[i][j]-med));
+//         }
+//         double MADN_j = get_median(abs_x_med_j) / 0.6745;
+//         E_MADN_list.push_back(MADN_j);
+//     }
+//
+// //    std::cout<<"E_MADN_list:"<<E_MADN_list.size()<<std::endl;
+// //    for(int i=0;i<E_MADN_list.size();i++)
+// //    {
+// //        std::cout<<"E_MADN_list"<<E_MADN_list[i]<<std::endl;
+// //    }
+// //
+// //    std::cout<<"E_MADN_list_size:"<<E_MADN_list.size()<<std::endl;
+// //    std::cout<<"ej_list_size:"<<ej_list.size()<<std::endl;
+// //    std::cout<<"ej_list[0]_size:"<<ej_list[0].size()<<std::endl;
+//     std::vector<std::vector<double>> W_MADN_j;
+//     std::vector<std::vector<double>> W_MADN;
+//     double W_MADN_tmp[ncams][n3Dpts];
+//     for(int i=0;i<E_MADN_list.size();i++)
+//     {
+//         std::vector<double> W_i;
+//         double dij, wij;
+//         for(int j=0;j<ej_list[i].size();j++)
+//         {
+//             if(ej_list[i][j]!=0){
+//                 dij = (ej_list[i][j]) / (4.685 * E_MADN_list[i]);
+//                 wij = func_weight(dij);
+// //                std::cout<<ej_list[i][j]<<"   "<<E_MADN_list[i]<<"     "<<dij<<"     "<<wij<<std::endl;
+//                 W_MADN_tmp[i][j]=wij;
+//             }
+//             else W_MADN_tmp[i][j]=0;
+//             dij = (ej_list[i][j]) / (4.685 * E_MADN_list[i]);
+//             wij = func_weight(dij);
+//             W_i.push_back(wij);
+//         }
+//         W_MADN_j.push_back(W_i);
+//     }
+//
+//     for(int i=0;i<n3Dpts;i++)
+//     {
+//         std::vector<double > W_tmp;
+//         for(int j=0;j<ncams;j++)
+//         {
+//             W_tmp.push_back(W_MADN_tmp[j][i]);
+//         }
+//         W_MADN.push_back(W_tmp);
+//     }
+//
+//
+//     double med_1 = get_median(ei_list);
+//     std::cout<<"med_1:"<<med_1<<std::endl;
+//     std::vector<double> abs_x_med;
+//     for(int i=0;i<ei_list.size();i++){
+//         if(ei_list[i]!=0)
+//         {
+//             abs_x_med.push_back(abs(ei_list[i]-med_1));
+// //            std::cout<<"ei_list:"<<ei_list[i]<<"        "<<med_1<<std::endl;
+//         }
+// //        std::cout<<"ei_list:"<<ei_list[i]<<"        "<<med_1<<std::endl;
+//     }
+//
+//     double MADN = get_median(abs_x_med) / 0.6745;
+//
+//     std::cout<<"MADN:"<<MADN<<std::endl;
+//
+//     std::vector<std::vector<double>> W;
+//
+//     for(int i=0;i<n3Dpts;i++)
+//     {
+//         std::vector<double> W_i;
+//         double dij, wij;
+// //        std::cout<<"ma_list:"<<ma_list[i]<<std::endl;
+//         for(int j=0;j<ncams;j++)
+//         {
+// //            std::cout<<"eimp_list:"<<eimp_list[i][j]<<std::endl;
+// //            if(eimp_list[i][j] < ma_list[i]){
+// //                dij = (eimp_list[i][j] - ma_list[i]) / (4.685 * MADN);
+// //                wij = func_weight(dij);
+// //                W_i.push_back(wij);
+// //            }
+// //            else W_i.push_back(1);
+//             dij = (eimp_list[i][j] - ma_list[i]) / (4.685 * MADN);
+// //            std::cout<<dij<<std::endl;
+//             wij = func_weight(dij);
+//             W_i.push_back(wij);
+//         }
+//         W.push_back(W_i);
+//     }
+// //    double sum=0;
+// //    for(int i=0;i<n3Dpts;i++)
+// //    {
+// ////        std::cout<<"Point"<<i<<std::endl;
+// //        for(int j=0;j<ncams;j++){
+// ////            std::cout<<e_squares_list[i][j]<<" ";
+// //            sum=sum+e_squares_list[i][j];
+// ////            if(W[i][j]<0.5) tmp++;
+// //        }
+// //        std::cout<<std::endl;
+// //    }
+// //    std::cout<<"sum"<<sum<<std::endl;
+//     int zero=0;
+//     for(int i=0;i<n3Dpts;i++)
+//     {
+//         std::cout<<"Point"<<i<<std::endl;
+//         for(int j=0;j<ncams;j++){
+// //            std::cout<<W_MADN_j[i][j]<<" ";
+// //            std::cout<<W[i][j]<<" ";
+//             if(W[i][j]<0.5) zero++;
+//         }
+// //        std::cout<<std::endl;
+//         for(int j=0;j<ncams;j++){
+// //            std::cout<<W_MADN_j[i][j]<<" ";
+//             std::cout<<W[i][j]<<" ";
+//             if(W[i][j]<0.5) zero++;
+//         }
+//         std::cout<<std::endl;
+//     }
+//
+// //    std::cout<<"i_size"<<W_MADN_j.size()<<std::endl;
+// //    std::cout<<"j_size"<<W_MADN_j[0].size()<<std::endl;
+// //
+// //    std::cout<<"zero:"<<zero<<std::endl;
+//     if(choose_part)
+//     {
+//         return W_MADN;     //分组MADN
+//     }
+//     else return W;        //整体MADN
+// //    return W;
+//
+// }
+
+std::vector<std::vector<double>> MAND(double *motstr, double *imgpts, char *vmask, int ncams, int n3Dpts, bool choose_part){
+
+    const int cmp=6;
+//     mx::pproj_params* camparams = new mx::pproj_params[ncams];
+//     double *Point3D=new double[n3Dpts*3];
+    init_CameraParameters Camera;
+    double *Point3D=new double[n3Dpts*3];
+
+    std::vector<double> ei_list;  // 储存每个点对应的ei(残差平方和列表的平均值)
+//    double *mp_list = new double[n3Dpts*ncams]; // 储存每个点对应链的mp(残差值中位数)
+    std::vector<double> mp_list; // 储存每个点对应链的mp(残差值中位数)
+    std::vector<double> ma_list;  // 储存所有点的ei/mp的中位数
+    double *MADN_list = new double[n3Dpts*ncams];  // 储存每个点对应的MADN
+    double *di_list = new double[n3Dpts*ncams];  // 储存每个点对应的di
+//    double *e_squares_list = new double[n3Dpts*ncams]; // 储存平方和列表,一行表示一个点对应链的平方和
+    std::vector<std::vector<double> > eimp_list;
+    std::vector<std::vector<double> > e_squares_list;
+
+    for(int i=0;i<n3Dpts;i++)
+    {
+        Point3D[3*i]=motstr[ncams*6+3*i];
+        Point3D[3*i+1]=motstr[ncams*6+3*i+1];
+        Point3D[3*i+2]=motstr[ncams*6+3*i+2];
+    }
+
+    for(int i=0;i<ncams;i++)
+    {
+        CameraParameters cam_tmp;
+        cam_tmp.s=motstr[i*6];
+        cam_tmp.alpha=motstr[i*6+1];
+        cam_tmp.beta=motstr[i*6+2];
+        cam_tmp.gamma=motstr[i*6+3];
+        cam_tmp.t0=motstr[i*6+4];
+        cam_tmp.t1=motstr[i*6+5];
+        Camera.cam.push_back(cam_tmp);
+    }
+
+    std::vector<double> f, u;
+    int gap = 0;
+    double e = 0;
+    for(int i=0;i<n3Dpts;i++)
+    {
+        util::point2d p;
+        Eigen::Vector3d point_tmp=Eigen::Vector3d(Point3D[3*i],Point3D[3*i+1],Point3D[3*i+2]);
+//        std::cout<<"Point"<<i<<std::endl;
+        std::vector<double> residual_list_ipoints;
+        for(int j=0;j<ncams;j++)
+        {
+            double x_o,y_o;
+            CameraParameters cam_tmp = Camera.cam[j];
+//            std::cout << "s:"<<cam_tmp.s<<" alpha:"<<cam_tmp.alpha
+//                      <<" beta:"<<cam_tmp.beta<<" gamma:"<<cam_tmp.gamma
+//                      <<" t0:"<<cam_tmp.t0<<" t1:"<<cam_tmp.t1<<std::endl;
+//            std::cout<<"X:"<<point_tmp[0]<<" Y:"<<point_tmp[1]<<" Z:"<<point_tmp[2]<<std::endl;
+            p = cam_tmp.Project(point_tmp);
+//            std::cout<<"x:"<<p.x<<" y:"<<p.y<<std::endl;
+            if(vmask[i*ncams+j]){
+                x_o=imgpts[i*(ncams*2)+2*j+0-gap*2];
+                y_o=imgpts[i*(ncams*2)+2*j+1-gap*2];
+                u.push_back(x_o);
+                u.push_back(y_o);
+
+                f.push_back(p.x);
+                f.push_back(p.y);
+
+                e=(p.x-x_o)*(p.x-x_o)+(p.y-y_o)*(p.y-y_o);
+
+                residual_list_ipoints.push_back(e);
+//                e_squares_list[i]
+            }
+            else{
+                f.push_back(0.0);
+                f.push_back(0.0);
+                u.push_back(0.0);
+                u.push_back(0.0);
+                gap++;
+
+                residual_list_ipoints.push_back(0);
+            }
+        }
+        e_squares_list.push_back(residual_list_ipoints);
+    }
+
+    for(int i=0;i<e_squares_list[0].size();i++){
+        double median=0;
+        std::vector<double> e_tmp;
+        for(int j=0;j<e_squares_list.size();j++){
+            e_tmp.push_back(e_squares_list[j][i]);
+        }
+//        std::cout<<"size:"<<i<<" "<<e_tmp.size()<<std::endl;
+//        std::cout<<"e_squares_list"<<i<<std::endl;
+        median=get_median(e_tmp);
+////        std::cout<<std::endl;
+//        std::cout<<"median:"<<median<<std::endl;
+        mp_list.push_back(median);
+    }
+
+    for(int i=0;i<n3Dpts;i++){
+        double ma = 0.0;
+        double median = 0.0;
+        std::vector<double> eimp_i;
+        for(int j=0;j<ncams;j++){
+            if(mp_list[j])
+            {
+                ma=e_squares_list[i][j]/mp_list[j];
+                eimp_i.push_back(ma);
+            } else eimp_i.push_back(0);
+        }
+        median=get_median(eimp_i);
+        ma_list.push_back(median);
+        eimp_list.push_back(eimp_i);
+    }
+
+    for(int i=0;i<n3Dpts;i++){
+        for(int j=0;j<ncams;j++){
+            ei_list.push_back(e_squares_list[i][j]);
+        }
+    }
+
+    std::vector<double> E_MADN_list;
+    std::vector<std::vector<double> > ej_list;
+    std::cout<<"ei_list:"<<e_squares_list.size()<<std::endl;
+    for(int i=0;i<ncams;i++)
+    {
+        std::vector<double> ej;
+        for(int j=0;j<n3Dpts;j++)
+        {
+            ej.push_back(e_squares_list[j][i]);
+        }
+        ej_list.push_back(ej);
+    }
+
+//    std::cout<<"ej_list:"<<ej_list.size()<<std::endl;
+
+    for(int i=0;i<ej_list.size();i++)
+    {
+        double med = get_median_tmp(ej_list[i]);
+        std::vector<double> abs_x_med_j;
+        for(int j=0;j<ej_list[i].size();j++)
+        {
+            if(ej_list[i][j]!=0) abs_x_med_j.push_back(abs(ej_list[i][j]-med));
+        }
+        double MADN_j = get_median(abs_x_med_j) / 0.6745;
+        E_MADN_list.push_back(MADN_j);
+    }
+
+
+    std::vector<std::vector<double>> W_MADN_j;
+std::vector<double> W_MADN_row;
+double W_MADN_tmp[ncams][n3Dpts];
+    for(int i=0;i<E_MADN_list.size();i++)
+    {
+        std::vector<double> W_i;
+        double dij, wij;
+        for(int j=0;j<ej_list[i].size();j++)
+        {
+            if(ej_list[i][j]!=0)
+            {
+                dij = (ej_list[i][j]) / (4.685 * E_MADN_list[i]);
+                wij = func_weight(dij);
+                W_MADN_tmp[i][j]=wij;
+            }
+            else {
+                W_MADN_tmp[i][j]=0;
+            }
+            dij = (ej_list[i][j]) / (4.685 * E_MADN_list[i]);
+            wij = func_weight(dij);
+//             W_MADN_row.push_back(wij);
+//             W_MADN_tmp[i][j]=wij;
+//             if(wij<0) std::cout<<"wij:"<<wij<<"*******************"<<std::endl;
+            W_i.push_back(wij);
+        }
+        W_MADN_j.push_back(W_i);
+    }
+
+    for(int i=0;i<n3Dpts;i++)
+    {
+        for(int j=0;j<ncams;j++)
+        {
+//             std::cout<<W_MADN_tmp[j][i]<<" ";
+        }
+//         std::cout<<std::endl;
+    }
+    std::vector<std::vector<double>> W_MADN;
+    std::vector<double > W_tmp;
+
+    for(int i=0;i<n3Dpts;i++)
+    {
+        std::vector<double > W_tmp;
+        for(int j=0;j<ncams;j++)
+        {
+            W_tmp.push_back(W_MADN_tmp[j][i]);
+//             if(W_MADN_j[j][i]<0) std::cout<<"*******************"<<W_MADN_j[j][i]<<std::endl;
+        }
+        for(int j=0;j<W_tmp.size();j++)
+        {
+//             std::cout<<W_tmp[j]<<" ";
+        }
+//         std::cout<<std::endl;
+        W_MADN.push_back(W_tmp);
+    }
+    int num_outliers1=0;
+
+    double med_1 = get_median(ei_list);
+    std::vector<double> abs_x_med;
+    for(int i=0;i<ei_list.size();i++){
+        abs_x_med.push_back(abs(ei_list[i]-med_1));
+    }
+
+    double MADN = get_median(abs_x_med) / 0.6745;
+
+
+
+    std::vector<std::vector<double>> W;
+
+    for(int i=0;i<n3Dpts;i++)
+    {
+        std::vector<double> W_i;
+        double dij, wij;
+        for(int j=0;j<ncams;j++)
+        {
+            dij = (eimp_list[i][j] - ma_list[i]) / (4.685 * MADN);
+            wij = func_weight(dij);
+            W_i.push_back(wij);
+        }
+        W.push_back(W_i);
+    }
+int num_outliers=0;
+// std::cout<<"W:"<<std::endl;
+   for(int i=0;i<n3Dpts;i++)
+   {
+//        std::cout<<"Point"<<i<<std::endl;
+       for(int j=0;j<ncams;j++){
+           std::cout<<W[i][j]<<" ";
+           if(W_MADN[i][j]>0.1) num_outliers++;
+
+       }
+       std::cout<<std::endl;
+   }
+   std::cout<<"num_outliers:"<<num_outliers<<std::endl;
+//     return W;
+    if(choose_part)
+    {
+        return W_MADN;     //分组MADN
+    }
+    else return W;
+
+}
+
+double Run_outliers(std::vector<util::point3d>& Point3D_true, std::vector<std::vector<double>>& Camera_new, std::vector<util::point2d>& Point2D_noise, std::vector<util::point2d>& Point2D_true,
+                    std::vector<util::point2d>& img_dis, std::vector<std::vector<double>>& Camera_noise,
+                    std::vector<std::vector<double>>& Camera_iter, int ncams, int n3Dpts,std::vector<int> vmask_begin, std::vector<int> vmask, std::vector<int> &v_dele, bool use_MADN, bool selectForres, bool choose_part)
+{
+
+    bool res_select=selectForres;
+
+    const int cmp=6;
+////    double *imgpts_tmp=nullptr;
+////    double *imgpts_tmp = new double[n3Dpts*ncams*2];
+    double *motstr_tmp = new double[n3Dpts*3+cmp*ncams];      //用于存储相机与3D点信息，在计算MADN的时候使用
+    init_CameraParameters Camera;
+    init_CameraParameters Camera_init;
+    double *Point3D=new double[n3Dpts*3];
+    double *Point3D_noise=new double[n3Dpts*3];
+
+    double *imgpts_state = new double[n3Dpts*ncams*2];
+    double *imgpts_true = new double[n3Dpts*ncams*2];
+
+//    PosePointParametersBlock states;
+    PosePointParametersBlock init_states;
+//    states.create(ncams, n3Dpts);
+    init_states.create(ncams, n3Dpts);
+
+    for(int i=0;i<ncams;i++)
+    {
+//        double *cameras_init=(init_states.pose(i));
+//        double *cameras=A;
+        init_states.values[i*6]=Camera_noise[i][0];
+        init_states.values[i*6+1]=Camera_noise[i][1];
+        init_states.values[i*6+2]=Camera_noise[i][2];
+        init_states.values[i*6+3]=Camera_noise[i][3];
+        init_states.values[i*6+4]=Camera_noise[i][4];
+        init_states.values[i*6+5]=Camera_noise[i][5];
+
+        CameraParameters cam;
+        cam.s=Camera_noise[i][0];
+        cam.alpha=Camera_noise[i][1];
+        cam.beta=Camera_noise[i][2];
+        cam.gamma=Camera_noise[i][3];
+        cam.t0=Camera_noise[i][4];
+        cam.t1=Camera_noise[i][5];
+
+        motstr_tmp[i*6]=Camera_noise[i][0];
+        motstr_tmp[i*6+1]=Camera_noise[i][1];
+        motstr_tmp[i*6+2]=Camera_noise[i][2];
+        motstr_tmp[i*6+3]=Camera_noise[i][3];
+        motstr_tmp[i*6+4]=Camera_noise[i][4];
+        motstr_tmp[i*6+5]=Camera_noise[i][5];
+
+        Camera_init.cam.push_back(cam);
+    }
+
+//    for(int i=0;i<ncams;i++)
+//    {
+//        double *cameras_init=(init_states.pose(i));
+//        std::cout<<cameras_init[0]<<std::endl;
+//    }
+
+
+    std::vector<std::vector<util::point2d>> match_point_chain;
+//    std::vector<std::vector<util::point2d>> match_point_chain_noise;
+    for(int i=0;i<n3Dpts;i++)
+    {
+        std::vector<util::point2d> match_tmp;
+        for(int j=0;j<ncams;j++)
+        {
+            match_tmp.push_back(Point2D_noise[i*ncams+j]);
+        }
+        match_point_chain.push_back(match_tmp);
+    }
+
+
+    //三角化
+    std::vector<util::point3d> points_move;
+    points_move = Process(0.7, Camera_init, match_point_chain);
+
+    std::string filename = "/home/xzh/文档/simulate/BA_Ceres_outliers_part_gai/BA_Ceres_outliers_part_gai/data/noise_3d.txt";
+    std::ofstream outputfile(filename);
+
+    for(int i=0;i<points_move.size();i++)
+    {
+        outputfile<< points_move[i].x<<"    "<<points_move[i].y<<"    "<<points_move[i].z<<std::endl;
+    }
+    outputfile.close();
+
+
+//    三角化结束
+
+    for(int i=0;i<points_move.size();i++)
+    {
+//        Eigen::Map<Eigen::Vector3d> true_pt(states.point(i));  //类似于引用地址
+        Eigen::Map<Eigen::Vector3d> init_pt(init_states.point(i));  //类似于引用地址
+//        Eigen::Map<Eigen::Vector3d> init_pt(init_states.point(i));
+        init_pt = Eigen::Vector3d(points_move[i].x,
+                                  points_move[i].y,
+                                  points_move[i].z);
+
+
+        Point3D_noise[3*i]=init_pt[0];
+        Point3D_noise[3*i+1]=init_pt[1];
+        Point3D_noise[3*i+2]=init_pt[2];
+
+
+        motstr_tmp[ncams*6+3*i]=init_pt[0];
+        motstr_tmp[ncams*6+3*i+1]=init_pt[1];
+        motstr_tmp[ncams*6+3*i+2]=init_pt[2];
+    }
+
+    int gap_size=0;             //imgpts_state只存储非0值
+    char *vmask_tmp=new char[n3Dpts*ncams];
+//    std::cout<<Point2D_noise.size()<<std::endl;
+    for(int i=0;i<Point2D_noise.size();i++)
+    {
+        if(vmask[i])
+        {
+            imgpts_state[gap_size*2]=Point2D_noise[i].x;
+            imgpts_state[gap_size*2+1]=Point2D_noise[i].y;
+            imgpts_true[gap_size*2]=Point2D_true[i].x;
+            imgpts_true[gap_size*2+1]=Point2D_true[i].y;
+            gap_size++;
+            vmask_tmp[i]=1;
+        }else vmask_tmp[i]=0;
+    }
+
+
+    double dij=0.0;
+    std::vector<std::vector<double>> W;
+//    use_MADN=false;
+    if(use_MADN){
+        W=MAND(motstr_tmp, imgpts_state, vmask_tmp, ncams, n3Dpts, choose_part);
+    }
+    else{
+        for(int i=0;i<n3Dpts;i++)
+        {
+            std::vector<double> W_i;
+            for(int j=0;j<ncams;j++)
+            {
+
+                W_i.push_back(1);
+            }
+            W.push_back(W_i);
+        }
+    }
+
+
+    //计算初始残差
+    std::vector<std::vector<int>> vmask_delet;
+    std::vector<double> f, u;
+    int gap = 0;
+    for(int i=0;i<points_move.size();i++)
+    {   std::vector<int> v_tmp;
+        util::point2d p;
+        Eigen::Vector3d point_tmp=Eigen::Vector3d(Point3D_noise[3*i],Point3D_noise[3*i+1],Point3D_noise[3*i+2]);
+//        std::cout<<"Point"<<i<<std::endl;
+//        std::cout<<"X:"<<point_tmp[0]<<" Y:"<<point_tmp[1]<<" Z:"<<point_tmp[2]<<std::endl;
+        for(int j=0;j<ncams;j++)
+        {
+            double x_o,y_o;
+            CameraParameters cam_tmp = Camera_init.cam[j];
+//            CameraParameters cam_tmp = Camera.cam[j];
+
+//            std::cout << "s:"<<cam_tmp.s<<" alpha:"<<cam_tmp.alpha
+//                      <<" beta:"<<cam_tmp.beta<<" gamma:"<<cam_tmp.gamma
+//                      <<" t0:"<<cam_tmp.t0<<" t1:"<<cam_tmp.t1<<std::endl;
+//            std::cout<<"X:"<<point_tmp[0]<<" Y:"<<point_tmp[1]<<" Z:"<<point_tmp[2]<<std::endl;
+            p = cam_tmp.Project(point_tmp);
+//            std::cout<<"x:"<<p.x<<" y:"<<p.y<<std::endl;
+            if(vmask_tmp[i*ncams+j]){
+
+                if(res_select)
+                {
+                    x_o=imgpts_true[i*(ncams*2)+2*j+0-gap*2];
+                    y_o=imgpts_true[i*(ncams*2)+2*j+1-gap*2];
+                }else
+                {
+                    x_o=imgpts_state[i*(ncams*2)+2*j+0-gap*2];
+                    y_o=imgpts_state[i*(ncams*2)+2*j+1-gap*2];
+                }
+//                std::cout<<"x_o:"<<x_o<<" y_o:"<<y_o<<std::endl;
+                u.push_back(x_o);
+                u.push_back(y_o);
+
+                f.push_back(p.x);
+                f.push_back(p.y);
+                v_tmp.push_back(1);
+
+            }
+            else{
+                f.push_back(0.0);
+                f.push_back(0.0);
+                u.push_back(0.0);
+                u.push_back(0.0);
+                v_tmp.push_back(0);
+                gap++;
+            }
+        }
+        vmask_delet.push_back(v_tmp);
+    }
+
+
+
+    double init_residual=0;
+    for (int i = 0; i < u.size(); i=i+1) {
+        double delt;
+//        std::cout<<" delt:"<<(u[i]-f[i])*(u[i]-f[i])<<" ";
+        delt=(u[i]-f[i])*(u[i]-f[i]);
+        init_residual=init_residual+delt;
+    }
+
+    std::cout<<"init_ResErr:"<<init_residual/(ncams*n3Dpts*2)<<std::endl;
+    std::cout<<"init_ResErr:"<<(ncams*n3Dpts*2)<<std::endl;
+
+//    for(int j=0;j<ncams;j++)
+//    {
+//        for(int k=0;k<Camera_noise[j].size();k++)
+//        {
+//            std::cout<<Camera_noise[j][k]<<"    ";
+//        }
+//        std::cout<<std::endl;
+//    }
+
+    gap=0;
+    ceres::Problem problem;
+    double tmp=0;
+    double x_o,y_o;
+    for(int i=0; i<n3Dpts; i++){
+        for(int j=0;j<ncams; j++){
+//            dij=W_init[i*ncams+j];
+            dij=W[i][j];
+//            std::cout<<dij<<std::endl;
+//            dij=W[i][j]*W_init[i*ncams+j];
+//            std::cout<<vmask[i*ncams+j]<<std::endl;
+            if(vmask[i*ncams+j]){
+
+                x_o=imgpts_state[i*(ncams*2)+2*j+0-gap*2];
+                y_o=imgpts_state[i*(ncams*2)+2*j+1-gap*2];
+
+//                std::cout<<x_o<<"      "<<y_o<<std::endl;
+
+                ceres::CostFunction* cost_function;
+                cost_function=new ReprojectionError<cmp>(x_o, y_o);
+                ceres::LossFunction* lossFunc = new MADN_loss(dij);
+//                ceres::LossFunction* lossFunc = new Huber(0.6);
+//                problem.AddResidualBlock(cost_function,NULL, init_states.pose(j), init_states.point(i));
+                problem.AddResidualBlock(cost_function,lossFunc, init_states.pose(j), init_states.point(i));
+//                problem.AddResidualBlock(cost_function,new ceres::CauchyLoss(1), states.pose(j), states.point(i));
+            }
+            else{
+                gap++;
+            }
+
+        }
+    }
+
+
+    ceres::Solver::Options options;
+    //配置增量方程的解法
+//    options.linear_solver_type = ceres::SPARSE_SCHUR;
+    options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
+    options.minimizer_progress_to_stdout = true;
+    options.max_num_iterations = 1000;
+
+    //第三步，创建Summary对象用于输出迭代结果
+    ceres::Solver::Summary summary;
+
+//    ceres::Solver(options,&problem,&summary);
+    ceres::Solve(options, &problem, &summary);
+
+    std::cout << summary.BriefReport() << "\n";
+
+//     for(int i=0;i<vmask_delet.size();i++)
+//     {
+//         for(int j=0;j<vmask_delet[i].size();j++)
+//         {
+//             std::cout<<vmask_delet[i][j]<<"      ";
+//         }
+//         std::cout<<std::endl;
+//     }
+//     std::cout<<std::endl;
+//     vmask_delet=vmask;
+    if(!use_MADN)
+    {
+
+        static constexpr double min_proj_error_threshold = 1.2;//1.2;//1.5;
+        static constexpr double max_proj_error_threshold = 3.2;//2.5;//4.5;
+
+        std::vector<std::vector<double>> e_list;
+
+        std::vector<std::vector<double>> e_squares_list;
+        double sum=0;
+        gap=0;
+        int tmp=0;
+        for(int i=0;i<n3Dpts;i++)
+        {
+            double e = 0;
+            util::point2d p;
+            Eigen::Vector3d point_tmp=Eigen::Vector3d(init_states.point(i)[0], init_states.point(i)[1], init_states.point(i)[2]);
+            double X[3], pr[2];
+//             X[0]=point_tmp[0]; X[1]=point_tmp[1]; X[2]=point_tmp[2];
+//        std::cout<<"Point"<<i<<std::endl;
+            std::vector<double> residual_list_ipoints;
+            for(int j=0;j<ncams;j++)
+            {
+                double x_o,y_o;
+                CameraParameters cam_tmp = Camera_init.cam[j];
+                p = cam_tmp.Project(point_tmp);
+    //            std::cout<<"x:"<<p.x<<" y:"<<p.y<<std::endl;
+                if(vmask[i*ncams+j]){
+                    x_o=imgpts_state[i*(ncams*2)+2*j+0-gap*2];
+                    y_o=imgpts_state[i*(ncams*2)+2*j+1-gap*2];
+                    u.push_back(x_o);
+                    u.push_back(y_o);
+
+                    f.push_back(p.x);
+                    f.push_back(p.y);
+//                     std::cout<<"记录:"<<std::endl;
+//                     std::cout<<"x:"<<x_o<<" y:"<<y_o<<std::endl;
+//                     std::cout<<"投影:"<<std::endl;
+//                     std::cout<<"x:"<<p.x<<" y:"<<p.y<<std::endl;
+                    e=(p.x-x_o)*(p.x-x_o)+(p.y-y_o)*(p.y-y_o);
+//                     std::cout<<"e:"<<e<<std::endl;
+                    residual_list_ipoints.push_back(std::sqrt(e));
+                    sum=sum+std::sqrt(e);
+                    tmp++;
+    //                e_squares_list[i]
+                }
+                else{
+                    f.push_back(0.0);
+                    f.push_back(0.0);
+                    u.push_back(0.0);
+                    u.push_back(0.0);
+                    gap++;
+
+                    residual_list_ipoints.push_back(0);
+                }
+            }
+            e_squares_list.push_back(residual_list_ipoints);
+        }
+        std::vector<std::vector<double>> ej_list;
+        for(int i=0;i<ncams;i++)
+        {
+            std::vector<double> ej;
+            for(int j=0;j<n3Dpts;j++)
+            {
+                ej.push_back(e_squares_list[j][i]);
+            }
+            ej_list.push_back(ej);
+        }
+#define NUM_STDDEV 2//2.0//3.0//6.0
+#define CLAMP(x,mn,mx) (((x) < mn) ? mn : (((x) > mx) ? mx : (x)))
+        double med, global_error;
+        double thresh = 1.2 * NUM_STDDEV * med;/* k * stddev */
+//         thresh = CLAMP(thresh, min_proj_error_threshold, max_proj_error_threshold);
+//             if(global_error > max_proj_error_threshold){		//considering that the global error; large noise
+//                 thresh = global_error;
+//             }
+        global_error=sum/tmp;
+//         std::cout<<global_error<<std::endl;
+        int tmp2=0;
+        gap=0;
+        for(int i=0;i<ej_list.size();i++)
+        {
+            med = get_median(ej_list[i]);
+            thresh = CLAMP(thresh, min_proj_error_threshold, max_proj_error_threshold);
+            if(global_error > max_proj_error_threshold){		//considering that the global error; large noise
+				thresh = global_error;
+			}
+			std::cout<<global_error<<std::endl;
+			for(int j=0;j<ej_list[i].size();j++)
+            {
+                if(ej_list[i][j]>thresh)
+                {
+                    vmask_delet[j][i]=0;
+//                     tmp2++;
+                }
+                std::cout<<ej_list[i][j]<<"      ";
+            }
+            std::cout<<std::endl;
+        }
+//         std::cout<<"tmp2:"<<tmp2<<std::endl;
+
+        for(int i=0;i<vmask_delet.size();i++)
+        {
+            for(int j=0;j<vmask_delet[i].size();j++)
+            {
+//                 std::cout<<vmask_delet[i][j]<<"      ";
+                if(vmask_delet[i][j]!=0) tmp2++;
+            }
+//             std::cout<<std::endl;
+        }
+        std::cout<<std::endl;
+std::cout<<"tmp2:"<<tmp2<<std::endl;
+
+/*
+        for(int i=0;i<e_squares_list.size();i++)
+        {
+            for(int j=0;j<e_squares_list[i].size();j++)
+            {
+                std::cout<<e_squares_list[i][j]<<"      ";
+            }
+            std::cout<<std::endl;
+        }
+        std::cout<<"***************"<<std::endl;
+        for(int i=0;i<ej_list.size();i++)
+        {
+            for(int j=0;j<ej_list[i].size();j++)
+            {
+                std::cout<<ej_list[i][j]<<"      ";
+            }
+            std::cout<<std::endl;
+        }
+*/
+
+
+    }
+
+    v_dele.clear();
+    for(int i=0;i<vmask_delet.size();i++)
+    {
+        for(int j=0;j<vmask_delet[i].size();j++)
+        {
+            v_dele.push_back(vmask_delet[i][j]);
+        }
+//         std::cout<<std::endl;
+    }
+
+
+//     for(int i=0;i<v_dele.size();i++)
+//     {
+//         std::cout<<v_dele[i]<<"      "<<vmask[i]<<std::endl;
+// //         std::cout<<std::endl;
+//     }
+
+
+
+
+
+
+
+    Camera_iter.clear();
+    for(int i=0;i<ncams;i++)
+    {
+        std::vector<double> cam_iter;
+        cam_iter.push_back(init_states.values[i * 6]);
+        cam_iter.push_back(init_states.values[i * 6+1]);
+        cam_iter.push_back(init_states.values[i * 6+2]);
+        cam_iter.push_back(init_states.values[i * 6+3]);
+        cam_iter.push_back(init_states.values[i * 6+4]);
+        cam_iter.push_back(init_states.values[i * 6+5]);
+        Camera_iter.push_back(cam_iter);
+    }
+
+    gap=0;
+    f.clear();
+    std::vector<double> residual_e;
+    for(int i=0;i<points_move.size();i++)
+    {
+        util::point2d p;
+        std::vector<double> cam_iter;
+        Eigen::Vector3d point_tmp=Eigen::Vector3d(init_states.point(i)[0],init_states.point(i)[1],init_states.point(i)[2]);
+//        std::cout<<"Point"<<i<<std::endl;
+//        std::cout<<"X:"<<point_tmp[0]<<" Y:"<<point_tmp[1]<<" Z:"<<point_tmp[2]<<std::endl;
+        for(int j=0;j<ncams;j++)
+        {
+            double x_o,y_o;
+            CameraParameters cam_tmp ;
+            cam_tmp.s= init_states.values[j*6];
+            cam_tmp.alpha= init_states.values[j*6+1];
+            cam_tmp.beta= init_states.values[j*6+2];
+            cam_tmp.gamma= init_states.values[j*6+3];
+            cam_tmp.t0= init_states.values[j*6+4];
+            cam_tmp.t1= init_states.values[j*6+5];
+
+//            std::cout << "s:"<<cam_tmp.s<<" alpha:"<<cam_tmp.alpha
+//                      <<" beta:"<<cam_tmp.beta<<" gamma:"<<cam_tmp.gamma
+//                      <<" t0:"<<cam_tmp.t0<<" t1:"<<cam_tmp.t1<<std::endl;
+
+
+            p = cam_tmp.Project(point_tmp);
+//            std::cout<<"x:"<<p.x<<" y:"<<p.y<<std::endl;
+            if(vmask_begin[i*ncams+j]){
+                if(res_select)
+                {
+                    x_o=imgpts_true[i*(ncams*2)+2*j+0-gap*2];
+                    y_o=imgpts_true[i*(ncams*2)+2*j+1-gap*2];
+                }else
+                {
+                    x_o=imgpts_state[i*(ncams*2)+2*j+0-gap*2];
+                    y_o=imgpts_state[i*(ncams*2)+2*j+1-gap*2];
+                }
+//                std::cout<<"x_o:"<<x_o<<" y_o:"<<y_o<<std::endl;
+                f.push_back(p.x-x_o);
+                f.push_back(p.y-y_o);
+                double dx, dy;
+                dx=p.x-x_o;
+                dy=p.y-y_o;
+                residual_e.push_back(sqrt(dx*dx+dy*dy));
+            }
+            else{
+                f.push_back(0.0);
+                f.push_back(0.0);
+                gap++;
+            }
+        }
+    }
+//    for(int i=0;i<ncams*n3Dpts;i++)
+//    {
+//        std::cout<<int(vmask_tmp[i])<<std::endl;
+//    }
+
+
+    std::cout<<std::endl;
+    int sum_tmp=0;
+    double residual=0;
+    for (int i = 0; i < f.size(); i=i+1) {
+        double delt;
+        if(f[i]==0) sum_tmp++;
+//         std::cout<<" "<<f[i]<<",";
+//         if(i%64==0&&i!=0) std::cout<<std::endl;
+        delt=f[i]*f[i];
+        residual+=delt;
+    }
+//    std::cout<<"sum_tmp:"<<sum_tmp<<std::endl;
+    double residual_tmp=0;
+    for (int i = 0; i < residual_e.size(); i=i+1) {
+        residual_tmp=residual_e[i]+residual_tmp;
+    }
+
+    std::cout<<"size:"<<f.size()<<std::endl;
+//    std::cout<<"residual:"<<residual<<" "<<residual_tmp<<std::endl;
+    std::cout<<std::endl;
+//    std::cout<<"ResErr:"<<residual/(ncams*n3Dpts*2)<<std::endl;
+    std::cout<<"ResErr:"<<residual_tmp/residual_e.size()<<std::endl;
+
+
+    if(use_MADN)
+    {
+        if(choose_part){
+            std::string res_file = "/home/xzh/文档/simulate/BA_Ceres_outliers_part_gai/BA_Ceres_outliers_part_gai/data/res_MADN_part.txt";
+            std::ofstream outputfile_res(res_file);
+
+//    std::string true_ord_file = "/Users/xuzihe/Desktop/C++代码/BA_Ceres_outliers_part_gai/data/true_ord.txt";
+//    std::ofstream outputfile_true_ord(true_ord_file);
+
+            for(int i=0;i<f.size();i++)
+            {
+                outputfile_res<<f[i]<<", ";
+                if(i%20==0) outputfile_res<<"\n";
+            }
+
+            outputfile_res.close();
+        }else{
+            std::string res_file = "/home/xzh/文档/simulate/BA_Ceres_outliers_part_gai/BA_Ceres_outliers_part_gai/data/res_MADN_all.txt";
+            std::ofstream outputfile_res(res_file);
+
+            for(int i=0;i<f.size();i++)
+            {
+                outputfile_res<<f[i]<<", ";
+                if(i%20==0) outputfile_res<<"\n";
+            }
+
+            outputfile_res.close();
+        }
+
+    }else{
+        std::string res_file = "/home/xzh/文档/simulate/BA_Ceres_outliers_part_gai/BA_Ceres_outliers_part_gai/data/res_L2.txt";
+        std::ofstream outputfile_res(res_file);
+
+//    std::string true_ord_file = "/Users/xuzihe/Desktop/C++代码/BA_Ceres_outliers_part_gai/data/true_ord.txt";
+//    std::ofstream outputfile_true_ord(true_ord_file);
+
+        for(int i=0;i<f.size();i++)
+        {
+            outputfile_res<<f[i]<<", ";
+            if(i%20==0) outputfile_res<<"\n";
+        }
+
+        outputfile_res.close();
+    }
+
+
+
+
+    return residual_tmp/residual_e.size();
+
+
+//    std::cout<<W.size()<<std::endl;
+//
+//
+//    for(int i=0;i<n3Dpts;i++)
+//    {
+//        std::cout<<"*******"<<i<<"*******"<<std::endl;
+//        for(int j=0;j<ncams;j++)
+//        {
+//            std::cout<<match_point_chain[i][j].x<<"   "<<match_point_chain[i][j].y<<std::endl;;
+//        }
+//
+//    }
+
+//    std::cout<<n3Dpts*ncams*2<<"    "<<n3Dpts*3+cmp*ncams<<std::endl;
+
+
+}
+
+
+
+double Run(double *motstr, double *imgpts, char *vmask, int ncams, int n3Dpts, bool use_MAND)
+{
+    const int cmp=6;
+//    double *imgpts_tmp=nullptr;
+    double *imgpts_tmp = new double[n3Dpts*ncams*2];
+    double *motstr_tmp = new double[n3Dpts*3+cmp*ncams];
+    for(int i=0;i<2112*2;i++)
+    {
+        imgpts_tmp[i]=imgpts[i];
+    }
+
+    init_CameraParameters Camera;
+    init_CameraParameters Camera_init;
+    double *Point3D=new double[n3Dpts*3];
+    double *Point3D_noise=new double[n3Dpts*3];
+
+    for(int i=0;i<n3Dpts;i++)
+    {
+        Point3D[3*i]=motstr[ncams*6+3*i];
+        Point3D[3*i+1]=motstr[ncams*6+3*i+1];
+        Point3D[3*i+2]=motstr[ncams*6+3*i+2];
+    }
+
+    PosePointParametersBlock states;
+    PosePointParametersBlock init_states;
+    states.create(ncams, n3Dpts);
+    init_states.create(ncams, n3Dpts);
+    for(int i=0;i<ncams;i++)
+    {
+        double *cameras_true (states.pose(i));
+        double *cameras_init (init_states.pose(i));
+//        double *cameras=A;
+        cameras_true[0]=motstr[i*6];
+        cameras_true[1]=motstr[i*6+1];
+        cameras_true[2]=motstr[i*6+2];
+        cameras_true[3]=motstr[i*6+3];
+        cameras_true[4]=motstr[i*6+4];
+        cameras_true[5]=motstr[i*6+5];
+
+        CameraParameters cam_tmp_true;
+        cam_tmp_true.s=motstr[i*6];
+        cam_tmp_true.alpha=motstr[i*6+1];
+        cam_tmp_true.beta=motstr[i*6+2];
+        cam_tmp_true.gamma=motstr[i*6+3];
+        cam_tmp_true.t0=motstr[i*6+4];
+        cam_tmp_true.t1=motstr[i*6+5];
+        Camera.cam.push_back(cam_tmp_true);
+
+
+//        cameras_init[0]=motstr[i*6]+Sample::gaussian(0.003);
+//        cameras_init[1]=motstr[i*6+1]+Sample::gaussian(0.0005);
+//        cameras_init[2]=motstr[i*6+2]+Sample::gaussian(0.005);
+//        cameras_init[3]=motstr[i*6+3]+Sample::gaussian(0.001);
+//        cameras_init[4]=motstr[i*6+4]+Sample::gaussian(0.5);
+//        cameras_init[5]=motstr[i*6+5]+Sample::gaussian(0.5);
+
+        cameras_init[0]=motstr[i*6]+Sample::gaussian(0);
+        cameras_init[1]=motstr[i*6+1]+Sample::gaussian(0);
+        cameras_init[2]=motstr[i*6+2]+Sample::gaussian(0);
+        cameras_init[3]=motstr[i*6+3]+Sample::gaussian(0);
+        cameras_init[4]=motstr[i*6+4]+Sample::gaussian(0);
+        cameras_init[5]=motstr[i*6+5]+Sample::gaussian(0);
+
+        motstr_tmp[i*6]=cameras_init[0];
+        motstr_tmp[i*6+1]=cameras_init[1];
+        motstr_tmp[i*6+2]=cameras_init[2];
+        motstr_tmp[i*6+3]=cameras_init[3];
+        motstr_tmp[i*6+4]=cameras_init[4];
+        motstr_tmp[i*6+5]=cameras_init[5];
+
+
+        CameraParameters cam_tmp;
+        cam_tmp.s=cameras_init[0];
+        cam_tmp.alpha=cameras_init[1];
+        cam_tmp.beta=cameras_init[2];
+        cam_tmp.gamma=cameras_init[3];
+        cam_tmp.t0=cameras_init[4];
+        cam_tmp.t1=cameras_init[5];
+        Camera_init.cam.push_back(cam_tmp);
+
+    }
+
+
+    double *true_2d = new double[n3Dpts*ncams*2];
+    std::vector<util::point2d> true_point2d;
+    std::vector<util::point2d> noise_point2d_new;
+    int dis=n3Dpts*ncams*0.1;
+//    std::cout<<"dis:"<<dis<<std::endl;
+
+    srand((unsigned)time(NULL));     //  类似于随机种子
+    int low=0;
+    int high=n3Dpts*ncams;
+//    int high=300;
+
+    std::vector<int> dis_num;
+    std::vector<int> point_sum;
+    for(int i=0;i<n3Dpts*ncams;i++)
+    {
+        point_sum.push_back(i);
+    }
+    std::random_shuffle(point_sum.begin(), point_sum.end());
+    for(int i=0;i<dis;i++)
+    {
+//        dis_num.push_back((rand()%(high-low+1))+ low);
+        dis_num.push_back(point_sum[i]);
+    }
+
+    for(int i=0;i<n3Dpts;i++)
+    {
+        util::point2d p;
+        Eigen::Vector3d point_tmp=Eigen::Vector3d(Point3D[3*i],Point3D[3*i+1],Point3D[3*i+2]);
+        for(int j=0;j<ncams;j++)
+        {
+            bool add=false;
+            for(int tmp=0;tmp<dis_num.size();tmp++)
+            {
+                if(i*ncams+j==dis_num[tmp])
+                {
+//                    std::cout<<dis_num[tmp]<<std::endl;
+                    p.x=0;
+                    p.y=0;
+                    true_point2d.push_back(p);
+                    noise_point2d_new.push_back(p);
+                    add= true;
+                    break;
+                }
+            }
+            if(!add)
+            {
+                CameraParameters cam_tmp = Camera.cam[j];
+                p = cam_tmp.Project(point_tmp);
+                true_point2d.push_back(p);
+            }
+        }
+    }
+
+    std::vector<std::vector<util::point2d>> match_point_chain;
+//    std::vector<std::vector<util::point2d>> match_point_chain_noise;
+    for(int i=0;i<n3Dpts;i++)
+    {
+        std::vector<util::point2d> match_tmp;
+        for(int j=0;j<ncams;j++)
+        {
+            match_tmp.push_back(true_point2d[i*ncams+j]);
+        }
+        match_point_chain.push_back(match_tmp);
+    }
+
+
+//    for(int i=0;i<n3Dpts;i++)
+//    {
+//        Eigen::Map<Eigen::Vector3d> true_pt(states.point(i));  //类似于引用地址
+//        Eigen::Map<Eigen::Vector3d> init_pt(init_states.point(i));  //类似于引用地址
+////        Eigen::Map<Eigen::Vector3d> init_pt(init_states.point(i));
+//        true_pt = Eigen::Vector3d(motstr[ncams*6+3*i],
+//                                  motstr[ncams*6+3*i+1],
+//                                  motstr[ncams*6+3*i+2]);
+//        init_pt = true_pt + Eigen::Vector3d(Sample::gaussian(1),
+//                                            Sample::gaussian(1),
+//                                            Sample::gaussian(1));
+//
+//
+//        Point3D_noise[3*i]=init_pt[0];
+//        Point3D_noise[3*i+1]=init_pt[1];
+//        Point3D_noise[3*i+2]=init_pt[2];
+//
+//
+//        motstr_tmp[ncams*6+3*i]=init_pt[0];
+//        motstr_tmp[ncams*6+3*i+1]=init_pt[1];
+//        motstr_tmp[ncams*6+3*i+2]=init_pt[2];
+//    }
+
+
+//    for(int i=0;i<points_move.size();i++)
+//    {
+//        std::cout<<" x:"<<points_move[i].x<<" y:"<<points_move[i].y<<" z:"<<points_move[i].z<<std::endl;
+//    }
+
+
+
+    int zere_sum=0;
+    std::cout<<std::endl;
+//    std::cout<<"dis"<<dis<<"zere_sum:"<<zere_sum<<"points_sum:"<<true_point2d.size()<<std::endl;
+
+    double *imgpts_state = new double[n3Dpts*ncams*2];
+    double *imgpts_true = new double[n3Dpts*ncams*2];
+
+    char *vmask_tmp=new char  [n3Dpts*ncams];
+
+    std::random_shuffle(point_sum.begin(), point_sum.end());
+    int noise_num = ncams*n3Dpts*0.3;
+    std::vector<int> noise_ord;
+    for(int i=0;i<noise_num;i++)
+    {
+//        dis_num.push_back((rand()%(high-low+1))+ low);
+        noise_ord.push_back(point_sum[i]);
+//        std::cout<<point_sum[i]<<" ";
+    }
+    std::vector<util::point2d> noise_point2d;
+    int sum_tmp=0;
+    std::vector<double> W_init;
+    std::vector<int > outliers_ord;
+    for(int i=0;i<true_point2d.size();i++)
+    {
+        util::point2d p;
+        bool noise_add=false;
+        for(int tmp=0;tmp<noise_ord.size();tmp++)
+        {
+            if(i==noise_ord[tmp])
+            {
+                if(true_point2d[i].x!=0&&true_point2d[i].y!=0)
+                {
+                    p.x=true_point2d[i].x+Sample::gaussian(100);
+                    p.y=true_point2d[i].y+Sample::gaussian(100);
+                    outliers_ord.push_back(i);
+                    noise_add= true;
+                    W_init.push_back(0.6);
+                    break;
+                }
+//                std::cout<<"old point:"<<true_point2d[i].x<<" "<<true_point2d[i].y<<std::endl;
+
+//                std::cout<<"new point:"<<true_point2d[i].x<<" "<<true_point2d[i].y<<std::endl;
+            }
+        }
+        if(!noise_add)
+        {
+            p.x=true_point2d[i].x;
+            p.y=true_point2d[i].y;
+            W_init.push_back(1);
+        }
+        noise_point2d.push_back(p);
+    }
+
+    std::vector<std::vector<util::point2d>> match_point_chain_noise;
+    for(int i=0;i<n3Dpts;i++)
+    {
+        std::vector<util::point2d> match_tmp;
+        for(int j=0;j<ncams;j++)
+        {
+            match_tmp.push_back(noise_point2d[i*ncams+j]);
+        }
+        match_point_chain_noise.push_back(match_tmp);
+    }
+
+    //用于三角测量
+
+
+    std::vector<util::point3d> points_move;
+
+    points_move = Process(0.7, Camera_init,match_point_chain_noise);
+
+
+//    std::cout<<"points: "<<points_move.size()<<std::endl;
+//
+//    for(int i=0;i<points_move.size();i++)
+//    {
+//        std::cout<<" x:"<<points_move[i].x<<" y:"<<points_move[i].y<<" z:"<<points_move[i].z<<std::endl;
+//    }
+
+//    for(int i=0;i<noise_point2d.size();i++)
+//    {
+//        std::cout<<" x:"<<noise_point2d[i].x<<" y:"<<noise_point2d[i].y<<" ";
+//        if(i%64==0&&i!=0)
+//        {
+//            std::cout<<std::endl;
+//        }
+//    }
+//    std::cout<<"true_point2d"<<true_point2d.size()<<std::endl;
+//    std::cout<<"noise_point2d_new"<<noise_point2d_new.size()<<std::endl;
+
+    int gap_size=0;             //imgpts_state只存储非0值
+    for(int i=0;i<true_point2d.size();i++)
+    {
+        if(true_point2d[i].x!=0)
+        {
+            vmask_tmp[i]=1;
+            imgpts_state[gap_size*2]=noise_point2d[i].x;
+            imgpts_state[gap_size*2+1]=noise_point2d[i].y;
+            imgpts_true[gap_size*2]=true_point2d[i].x;
+            imgpts_true[gap_size*2+1]=true_point2d[i].y;
+            gap_size++;
+        }
+        else vmask_tmp[i]=0;
+    }
+
+
+
+
+
+
+    for(int i=0;i<points_move.size();i++)
+    {
+//        Eigen::Map<Eigen::Vector3d> true_pt(states.point(i));  //类似于引用地址
+        Eigen::Map<Eigen::Vector3d> init_pt(init_states.point(i));  //类似于引用地址
+//        Eigen::Map<Eigen::Vector3d> init_pt(init_states.point(i));
+        init_pt = Eigen::Vector3d(points_move[i].x,
+                                  points_move[i].y,
+                                  points_move[i].z);
+
+
+        Point3D_noise[3*i]=init_pt[0];
+        Point3D_noise[3*i+1]=init_pt[1];
+        Point3D_noise[3*i+2]=init_pt[2];
+
+
+        motstr_tmp[ncams*6+3*i]=init_pt[0];
+        motstr_tmp[ncams*6+3*i+1]=init_pt[1];
+        motstr_tmp[ncams*6+3*i+2]=init_pt[2];
+    }
+
+    for(int i=0;i<n3Dpts;i++)
+    {
+        Eigen::Map<Eigen::Vector3d> true_pt(states.point(i));  //类似于引用地址
+//        Eigen::Map<Eigen::Vector3d> init_pt(init_states.point(i));
+        true_pt = Eigen::Vector3d(motstr[ncams*6+3*i],
+                                  motstr[ncams*6+3*i+1],
+                                  motstr[ncams*6+3*i+2]);
+    }
+
+
+
+
+
+
+
+//    for(int i=150;i<gap_size;i++)
+//    {
+//        std::cout<<" x:"<<imgpts_state[i*2]<<" y:"<<imgpts_state[i*2+1];
+//    }
+//    std::cout<<std::endl;
+//    for(int i=150;i<gap_size;i++)
+//    {
+//        std::cout<<" x:"<<imgpts_true[i*2]<<" y:"<<imgpts_true[i*2+1];
+//    }
+
+
+//    for(int i=0;i<dis_num.size();i++)
+//    {
+//        for(int j=0;j<noise_ord.size();j++)
+//        {
+//            if(dis_num[i]==noise_ord[j]) sum_tmp++;
+//        }
+//    }
+
+//    for(int i=0;i<noise_point2d.size();i++)
+//    {
+//        if(noise_point2d[i].x==0) sum_tmp++;
+//    }
+//    std::cout<<"sum_tmp:"<<sum_tmp<<std::endl;
+
+
+//    std::cout<<"noise_num:"<<noise_num<<std::endl;
+//    std::cout<<"W:"<<W_init.size()<<std::endl;
+//    for(int i=0;i<noise_num;i++)
+//    {
+//        std::cout<<"noise_ord:"<<noise_ord[i]<<" ";
+//    }
+//std::cout<<std::endl;
+//    for(int i=0;i<W_init.size();i++)
+//    {
+//        if(i%50==0) std::cout<<std::endl;
+//        std::cout<<" "<<W_init[i]<<" ";
+//    }
+
+
+
+
+
+
+//    std::vector<std::vector<util::point2d>> Point2D;
+    std::vector<double> f, u;
+    int gap = 0;
+    for(int i=0;i<points_move.size();i++)
+    {
+        util::point2d p;
+        Eigen::Vector3d point_tmp=Eigen::Vector3d(Point3D_noise[3*i],Point3D_noise[3*i+1],Point3D_noise[3*i+2]);
+//        std::cout<<"Point"<<i<<std::endl;
+//        std::cout<<"X:"<<point_tmp[0]<<" Y:"<<point_tmp[1]<<" Z:"<<point_tmp[2]<<std::endl;
+        for(int j=0;j<ncams;j++)
+        {
+            double x_o,y_o;
+            CameraParameters cam_tmp = Camera_init.cam[j];
+//            CameraParameters cam_tmp = Camera.cam[j];
+
+//            std::cout << "s:"<<cam_tmp.s<<" alpha:"<<cam_tmp.alpha
+//                      <<" beta:"<<cam_tmp.beta<<" gamma:"<<cam_tmp.gamma
+//                      <<" t0:"<<cam_tmp.t0<<" t1:"<<cam_tmp.t1<<std::endl;
+//            std::cout<<"X:"<<point_tmp[0]<<" Y:"<<point_tmp[1]<<" Z:"<<point_tmp[2]<<std::endl;
+            p = cam_tmp.Project(point_tmp);
+//            std::cout<<"x:"<<p.x<<" y:"<<p.y<<std::endl;
+            if(vmask_tmp[i*ncams+j]){
+                x_o=imgpts_true[i*(ncams*2)+2*j+0-gap*2];
+                y_o=imgpts_true[i*(ncams*2)+2*j+1-gap*2];
+//                std::cout<<"x_o:"<<x_o<<" y_o:"<<y_o<<std::endl;
+                u.push_back(x_o);
+                u.push_back(y_o);
+
+                f.push_back(p.x);
+                f.push_back(p.y);
+            }
+            else{
+                f.push_back(0.0);
+                f.push_back(0.0);
+                u.push_back(0.0);
+                u.push_back(0.0);
+                gap++;
+            }
+        }
+    }
+
+    gap=0;
+    ceres::Problem problem;
+
+
+    double dij=0.0;
+    std::vector<std::vector<double>> W;
+    if(use_MAND){
+        W=MAND(motstr_tmp, imgpts_state, vmask_tmp, ncams, n3Dpts, true);
+    }
+    else{
+        for(int i=0;i<n3Dpts;i++)
+        {
+            std::vector<double> W_i;
+            for(int j=0;j<ncams;j++)
+            {
+
+                W_i.push_back(1);
+            }
+            W.push_back(W_i);
+        }
+    }
+    double tmp=0;
+    double x_o,y_o;
+    for(int i=0; i<n3Dpts; i++){
+        for(int j=0;j<ncams; j++){
+//            dij=W_init[i*ncams+j];
+            dij=W[i][j];
+//            dij=W[i][j]*W_init[i*ncams+j];
+            if(vmask_tmp[i*ncams+j]){
+
+                x_o=imgpts_state[i*(ncams*2)+2*j+0-gap*2];
+                y_o=imgpts_state[i*(ncams*2)+2*j+1-gap*2];
+
+                ceres::CostFunction* cost_function;
+                cost_function=new ReprojectionError<cmp>(x_o, y_o);
+//                std::cout<<"dij:"<<dij<<std::endl;
+//                if(dij!=1) std::cout<<"dij:"<<dij<<std::endl;
+//if(dij!=1) dij=1;
+                ceres::LossFunction* lossFunc = new MADN_loss(dij);
+//                ceres::LossFunction* lossFunc = new Huber(0.6);
+//                problem.AddResidualBlock(cost_function,NULL, init_states.pose(j), init_states.point(i));
+                problem.AddResidualBlock(cost_function,lossFunc, init_states.pose(j), init_states.point(i));
+//                problem.AddResidualBlock(cost_function,new ceres::CauchyLoss(1), states.pose(j), states.point(i));
+            }
+            else{
+                gap++;
+            }
+
+
+        }
+    }
+
+
+
+
+    double init_residual=0;
+    for (int i = 0; i < u.size(); i=i+1) {
+        double delt;
+//        std::cout<<" delt:"<<(u[i]-f[i])*(u[i]-f[i])<<" ";
+        delt=(u[i]-f[i])*(u[i]-f[i]);
+        init_residual=init_residual+delt;
+    }
+
+    std::cout<<"init_ResErr:"<<init_residual/(states.pointNum*states.poseNum*2)<<std::endl;
+
+
+    ceres::Solver::Options options;
+    //配置增量方程的解法
+//    options.linear_solver_type = ceres::SPARSE_SCHUR;
+    options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
+    options.minimizer_progress_to_stdout = true;
+    options.max_num_iterations = 1000;
+
+    //第三步，创建Summary对象用于输出迭代结果
+    ceres::Solver::Summary summary;
+
+//    ceres::Solver(options,&problem,&summary);
+    ceres::Solve(options, &problem, &summary);
+
+    std::cout << summary.BriefReport() << "\n";
+
+    std::cout<<"初始值："<<std::endl;
+    for(int y=0;y<cmp*ncams+3*n3Dpts;y++)
+    {
+        std::cout<<motstr[y]<<" ";
+    }
+    std::cout<<std::endl;
+
+    std::cout<<"优化后："<<std::endl;
+    for(int y=0;y<cmp*ncams+3*n3Dpts;y++)
+    {
+        std::cout<<init_states.values[y]<<" ";
+    }
+
+//    for(int j=0;j<ncams;j++) {
+//        motstr[j*6] = states.pose(j)[0];
+//        motstr[j*6+1] = states.pose(j)[1];
+//        motstr[j*6+2] = states.pose(j)[2];
+//        motstr[j*6+3] = states.pose(j)[3];
+//        motstr[j*6+4] = states.pose(j)[4];
+//        motstr[j*6+5] = states.pose(j)[5];
+//    }
+//    for(int j=0;j<n3Dpts;j++) {
+//        motstr[ncams*6+j*3] = states.point(j)[0];
+//        motstr[ncams*6+j*3+1] = states.point(j)[1];
+//        motstr[ncams*6+j*3+2] = states.point(j)[2];
+//    }
+
+
+    gap=0;
+    f.clear();
+    for(int i=0;i<points_move.size();i++)
+    {
+        util::point2d p;
+        Eigen::Vector3d point_tmp=Eigen::Vector3d(init_states.point(i)[0],init_states.point(i)[1],init_states.point(i)[2]);
+//        std::cout<<"Point"<<i<<std::endl;
+//        std::cout<<"X:"<<point_tmp[0]<<" Y:"<<point_tmp[1]<<" Z:"<<point_tmp[2]<<std::endl;
+        for(int j=0;j<ncams;j++)
+        {
+            double x_o,y_o;
+            CameraParameters cam_tmp ;
+            cam_tmp.s= init_states.pose(j)[0];
+            cam_tmp.alpha= init_states.pose(j)[1];
+            cam_tmp.beta= init_states.pose(j)[2];
+            cam_tmp.gamma= init_states.pose(j)[3];
+            cam_tmp.t0= init_states.pose(j)[4];
+            cam_tmp.t1= init_states.pose(j)[5];
+            p = cam_tmp.Project(point_tmp);
+//            std::cout<<"x:"<<p.x<<" y:"<<p.y<<std::endl;
+            if(vmask_tmp[i*ncams+j]){
+//                x_o=imgpts_true[i*(ncams*2)+2*j+0-gap*2];
+//                x_o=imgpts_true[i*(ncams*2)+2*j+0-gap*2];
+                x_o=imgpts_state[i*(ncams*2)+2*j+0-gap*2];
+                y_o=imgpts_state[i*(ncams*2)+2*j+1-gap*2];
+//                std::cout<<"x_o:"<<x_o<<" y_o:"<<y_o<<std::endl;
+                f.push_back(p.x-x_o);
+                f.push_back(p.y-y_o);
+            }
+            else{
+                f.push_back(0.0);
+                f.push_back(0.0);
+                gap++;
+            }
+        }
+    }
+    std::cout<<std::endl;
+
+
+    std::vector<double > residual_3d;
+    double sum_3d=0;
+    for(int i=0;i<points_move.size();i++)
+    {
+        util::point2d p;
+        double delt_x, delt_y, delt_z;
+//        Eigen::Vector3d point_tmp=Eigen::Vector3d(init_states.point(i)[0],init_states.point(i)[1],init_states.point(i)[2]);
+//        Eigen::Vector3d point_true=Eigen::Vector3d(states.point(i)[0],states.point(i)[1],states.point(i)[2]);
+        delt_x=states.point(i)[0]-init_states.point(i)[0];
+        delt_y=states.point(i)[1]-init_states.point(i)[1];
+        delt_z=states.point(i)[2]-init_states.point(i)[2];
+        sum_3d=sum_3d+delt_x*delt_x+delt_y*delt_y+delt_z*delt_z;
+        residual_3d.push_back(delt_x*delt_x+delt_y*delt_y+delt_z*delt_z);
+    }
+
+    std::cout<<std::endl;
+//    std::cout<<"residual_3d:"<<sum_3d/(states.pointNum)<<std::endl;
+
+//    for(int i=0;i<residual_3d.size();i++)
+//    {
+//        std::cout<<" "<<residual_3d[i]<<",";
+//    }
+
+    sort(outliers_ord.begin(), outliers_ord.end());
+    std::cout<<" outliers:"<<outliers_ord.size()<<std::endl;
+    for(int i=0;i<outliers_ord.size();i++)
+    {
+        std::cout<<" "<<outliers_ord[i]<<", ";
+    }
+    std::cout<<std::endl;
+    std::vector<int > left;
+    for(int i=0;i<true_point2d.size();i++)
+    {
+        bool find= false;
+        for(int j=0;j<outliers_ord.size();j++)
+        {
+            if(i==outliers_ord[j]){
+                find=true;
+                break;
+            }
+//            else find=false;
+        }
+        if(!find)
+        {
+            left.push_back(i);
+        }
+    }
+    std::cout<<" outliers:"<<outliers_ord.size()<<std::endl;
+    std::cout<<" left:"<<left.size()<<std::endl;
+
+
+
+
+
+    double residual=0;
+    double residual_tmp=0;
+    std::vector<double > residual_num;
+    for (int i = 0; i < f.size(); i=i+1) {
+        double delt_x,delt_y;
+//        std::cout<<" "<<delt<<",";
+//        delt_x=f[2*i];
+//        delt_y=f[2*i+1];
+        residual_num.push_back(f[i]);
+        residual_tmp=residual_tmp+delt_x+delt_y;
+    }
+    std::cout<<"residual_num:"<<residual_num.size()<<std::endl;
+
+//    for(int i=0;i<outliers_ord.size();i++)
+//    {
+//        std::cout<<residual_num[outliers_ord[i]]<<", ";
+//        if(i%64==0&&i!=0) std::cout<<std::endl;
+//    }
+    std::cout<<std::endl;
+    std::cout<<"left:"<<std::endl;
+
+    for(int i=0;i<left.size();i++)
+    {
+        std::cout<<left[i]<<", ";
+    }
+    std::cout<<std::endl;
+//    for(int i=0;i<left.size();i++)
+//    {
+//        std::cout<<residual_num[left[i]]<<", ";
+//        if(i%64==0&&i!=0) std::cout<<std::endl;
+//    }
+
+    for(int i=0;i<residual_num.size();i++)
+    {
+        std::cout<<residual_num[i]<<", ";
+        if(i%64==0&&i!=0) std::cout<<std::endl;
+    }
+
+    for (int i = 0; i < f.size(); i=i+1) {
+        double delt;
+//        std::cout<<" "<<delt<<",";
+        delt=f[i]*f[i];
+        residual+=delt;
+    }
+
+    std::cout<<"size:"<<f.size()<<std::endl;
+//    std::cout<<"residual:"<<residual<<" "<<residual_tmp<<std::endl;
+    std::cout<<std::endl;
+    std::cout<<"ResErr:"<<residual/(states.pointNum*states.poseNum*2)<<std::endl;
+
+
+
+    return residual/(states.pointNum*states.poseNum*2);
+}
+
+
+
+bool isNumberLine(const std::string& line){
+    std::istringstream iss(line);
+    double num;
+//     std::cout<<iss<<std::endl;
+    while(iss >>num){
+//         std::cout<<num<<std::endl;
+        if(iss.fail()){
+            return false;
+        }
+    }
+    return true;
+}
+
+// double kth_element(int n, int k, double *arr) {
+//     if (k >= n) {
+// 	printf("[kth_element] Error: k should be < n\n");
+// 	return 0.0;
+//     } else {
+// 	int split = partition(n, arr);
+// 	if (k == split)
+// 	    return arr[split];
+// 	else if (k < split)
+// 	    return kth_element(split, k, arr);
+// 	else
+// 	    return kth_element(n - split - 1, k - split - 1, arr + split + 1);
+//     }
+// }
+
+// /* Find the kth element without changing the array */
+// double kth_element_copy(int n, int k, double *arr) {
+//     double *arr_copy = (double *)malloc(sizeof(double) * n);
+//     double kth_best;
+//
+//     memcpy(arr_copy, arr, sizeof(double) * n);
+//     kth_best = kth_element(n, k, arr_copy);
+//     free(arr_copy);
+//
+//     return kth_best;
+// }
+
+void tmp(int ncams)
+{
+    static constexpr double min_proj_error_threshold = 1.2;//1.2;//1.5;
+    static constexpr double max_proj_error_threshold = 3.2;//2.5;//4.5;
+
+
+    for(int i=0;i<ncams;i++)
+    {
+
+        double med, global_error;
+
+#define NUM_STDDEV 2//2.0//3.0//6.0
+#define CLAMP(x,mn,mx) (((x) < mn) ? mn : (((x) > mx) ? mx : (x)))
+        double thresh = 1.2 * NUM_STDDEV * med;/* k * stddev */
+        thresh = CLAMP(thresh, min_proj_error_threshold, max_proj_error_threshold);
+        if(global_error > max_proj_error_threshold){		//considering that the global error; large noise
+            thresh = global_error;
+        }
+
+    }
+//     get_median()
+
+
+
+
+}
+
+
+
+int main(int argc, char *argv[]) {
+    std::ifstream fin;
+
+//    google::InitGoogleLogging(argv[0]);
+    int ncams = 64, n3Dpts = 36;
+    double *motstr = new double[ncams*6+n3Dpts*3];
+    double *imgpts = new double[n3Dpts*ncams*2];
+    char   *vmask  = new char  [n3Dpts*ncams];
+    memset(imgpts, 0, sizeof(double) * (ncams*2*n3Dpts));
+
+    fin.open("/home/xzh/文档/simulate/BA_Ceres_outliers_part_gai/BA_Ceres_outliers_part_gai/data/motstr_data.txt", std::ios::in);
+    for (int i = 0; i < ncams*6+n3Dpts*3; i++) fin >> motstr[i];
+    fin.close();
+
+    fin.open("/home/xzh/文档/simulate/BA_Ceres_outliers_part_gai/BA_Ceres_outliers_part_gai/data/imgpts_data.txt", std::ios::in);
+    for (int i = 0; i < 2112*2; i++) fin >> imgpts[i];
+    fin.close();
+
+    fin.open("/home/xzh/文档/simulate/BA_Ceres_outliers_part_gai/BA_Ceres_outliers_part_gai/data/vmask_data.txt", std::ios::in);
+    for (int i = 0; i < n3Dpts*ncams; i++) {
+        fin >> vmask[i];
+        vmask[i] -= '0';
+    }
+    fin.close();
+
+    std::clock_t start, end;
+    start = clock();
+//    bool use_MADN = false;
+    double sum=0;
+    std::vector<double> residual_ver;
+
+    fin.open("/home/xzh/桌面/模拟数据/Proj_dataset/20_points.txt", std::ios::in);
+//     fin.open("/home/xzh/projects/BA/data/vmask_data.txt", std::ios::in);
+    std::string str;
+    std::vector<util::point3d> Point3D;
+    std::vector<std::vector<double>> Camera;
+    std::stringstream ss;
+    std::string line;
+    std::vector<std::vector<double>> Point3D_tmp;
+    while (getline(fin, str))
+    {
+        std::vector<double> numbers;
+        std::stringstream ss(str);
+        char delimiter;
+        double num;
+
+        ss>>delimiter;
+
+        while (ss>>num)
+        {
+            numbers.push_back(num);
+            ss>>delimiter;
+        }
+
+        Point3D_tmp.push_back(numbers);
+    }
+    fin.close();
+
+
+
+    fin.open("/home/xzh/桌面/模拟数据/Proj_dataset/64_cameras.txt", std::ios::in);
+    while (getline(fin, str))
+    {
+        if(isNumberLine(str)){
+            std::vector<double> numbers;
+            std::stringstream ss(str);
+            char delimiter;
+            double num;
+
+            while (ss>>num)
+            {
+                numbers.push_back(num);
+            }
+
+            if(numbers.size()>0)
+            {
+                Camera.push_back(numbers);
+            }
+
+        }
+    }
+    fin.close();
+//    std::cout<<Point3D_tmp.size()<<"================="<<std::endl;
+    for(int i=0;i<Point3D_tmp.size();i++)
+    {
+        util::point3d point_tmp;
+        point_tmp.x=Point3D_tmp[i][0];
+        point_tmp.y=Point3D_tmp[i][1];
+        point_tmp.z=Point3D_tmp[i][2];
+        Point3D.push_back(point_tmp);
+//        std::cout<<Point3D[0].x<<"================="<<std::endl;
+    }
+
+//    std::cout<<Point3D[0][0]<<std::endl;
+
+    std::vector<util::point2d> Point2D_noise;
+    std::vector<util::point2d> Point2D_true;
+    std::vector<util::point2d> img_dis;
+//    std::vector<std::vector<util::point2d>> Point2D_noise;
+    std::vector<std::vector<double>> Camera_noise;
+    std::vector<std::vector<double>> Camera_iter;
+    std::vector<std::vector<double>> Camera_tmp;
+    std::vector<std::vector<double>> Camera_mid;
+    int ncams_new=Camera.size();
+    int n3Dpts_new=Point3D.size();
+//    bool noise= true;    //给相机加噪声
+    bool noise= false;    //不给相机加噪声
+    std::vector<int> vmask_new;
+    std::vector<int> vmask_delet;
+    std::vector<int> vmask_tmp;
+    std::vector<int> vmask_begin;
+    // 如果不给相机加噪声，则第一遍优化的时候用的相机参数是真值，之后迭代的相机参数不再是真实，
+    // 所以残差会变大，因此在优化的时候，我们应该给相机加一些噪声
+
+//    Addoutliers(Point3D, Camera, Point2D_noise, Camera_noise, ncams_new, n3Dpts_new, noise);
+    Addoutliers(Point3D,Camera,Point2D_noise,Point2D_true,img_dis,Camera_noise,ncams_new,n3Dpts_new, noise, vmask_new);
+    vmask_tmp=vmask_new;
+    vmask_begin=vmask_new;
+
+    double res;
+    bool selectForres= true;       // true为优化值与真实值的残差，false是优化值与带离群点的残差
+    bool use_MADN = true;
+//    std::cout<<img_dis.size()<<std::endl;
+//    bool use_MADN = false;
+//    Camera_iter=Camera_noise;
+//     std
+    res=Run_outliers(Point3D, Camera, Point2D_noise, Point2D_true,img_dis,
+                     Camera_noise, Camera_iter,ncams_new, n3Dpts_new, vmask_begin, vmask_new, vmask_delet,
+                     false, selectForres, true);
+
+        int no_zero=0;
+    std::cout<<"vmask_delet.size():"<<vmask_delet.size()<<std::endl;
+    for(int i=0;i<vmask_delet.size();i++)
+    {
+        if(vmask_delet[i]!=0) no_zero++;
+//         std::cout<<vmask_delet[i]<<std::endl;
+//         std::cout<<std::endl;
+    }
+std::cout<<"no_zero:"<<no_zero<<std::endl;
+    //优化的时候用的是Camera_noise，优化后的存储在Camera_iter
+//     std::vector<int> vmask_tmp;
+    int zero_tmp;
+    for(int i=0;i<5;i++)
+    {
+        std::cout<<"**********"<<i<<"**********"<<std::endl;
+        vmask_new=vmask_delet;
+        zero_tmp=no_zero;
+        no_zero=0;
+        vmask_delet.clear();
+        Camera_tmp=Camera_iter;
+        Run_outliers(Point3D, Camera, Point2D_noise, Point2D_true,img_dis,
+                     Camera_tmp, Camera_iter,ncams_new, n3Dpts_new, vmask_begin, vmask_new, vmask_delet,
+                     false, selectForres, true);
+        for(int i=0;i<vmask_delet.size();i++)
+        {
+            if(vmask_delet[i]!=0) no_zero++;
+        }
+        if(no_zero==zero_tmp) break;
+
+        vmask_new.clear();
+    }
+
+
+
+
+   for(int i=0;i<ncams_new;i++)
+   {
+
+       for(int j=0;j<Camera_iter[i].size();j++)
+       {
+           std::cout<<Camera_iter[i][j]<<"    ";
+       }
+       std::cout<<std::endl;
+       for(int j=0;j<Camera_iter[i].size();j++)
+       {
+           std::cout<<Camera[i][j]<<"    ";
+       }
+       std::cout<<std::endl;
+   }
+int gap=0;
+std::vector<double> f;
+    std::vector<double> res_sum;
+    for(int i=0;i<Point3D.size();i++)
+    {
+
+        util::point2d p;
+        Eigen::Vector3d point_tmp = Eigen::Vector3d(Point3D[i].x,Point3D[i].y,Point3D[i].z);
+//         std::cout<<"Point"<<i<<std::endl;
+//         std::cout<<"X:"<<point_tmp[0]<<" Y:"<<point_tmp[1]<<" Z:"<<point_tmp[2]<<std::endl;
+        for(int j=0;j<Camera.size();j++)
+        {
+            double x_o,y_o;
+            CameraParameters cam;
+            cam.s=Camera_iter[j][0];
+            cam.alpha=Camera_iter[j][1];
+            cam.beta=Camera_iter[j][2];
+            cam.gamma=Camera_iter[j][3];
+            cam.t0=Camera_iter[j][4];
+            cam.t1=Camera_iter[j][5];
+//             CameraParameters cam_tmp = Camera_init.cam[j];
+//            CameraParameters cam_tmp = Camera.cam[j];
+
+//            std::cout << "s:"<<cam_tmp.s<<" alpha:"<<cam_tmp.alpha
+//                      <<" beta:"<<cam_tmp.beta<<" gamma:"<<cam_tmp.gamma
+//                      <<" t0:"<<cam_tmp.t0<<" t1:"<<cam_tmp.t1<<std::endl;
+//            std::cout<<"X:"<<point_tmp[0]<<" Y:"<<point_tmp[1]<<" Z:"<<point_tmp[2]<<std::endl;
+            p = cam.Project(point_tmp);
+
+//             x_o=Point2D_true[i*Camera.size()+j].x;
+//             y_o=Point2D_true[i*Camera.size()+j].y;
+            x_o=Point2D_noise[i*Camera.size()+j].x;
+            y_o=Point2D_noise[i*Camera.size()+j].y;
+//             std::cout<<"X:"<<x_o<<" Y:"<<y_o<<std::endl;
+//             std::cout<<"X:"<<p.x<<" Y:"<<p.y<<std::endl;
+
+            double dx=p.x-x_o;
+            double dy=p.y-y_o;
+// std::cout<<"vmask[i*ncams+j]"<<vmask[i*ncams+j]<<std::endl;
+//             std::cout<<"X:"<<dx<<" Y:"<<dy<<std::endl;
+            if(vmask_begin[i*Camera.size()+j]){
+
+                f.push_back(dx);
+                f.push_back(dy);
+// std::cout<<"X:"<<dx<<" Y:"<<dy<<std::endl;
+//                e_squares_list[i]
+            }
+            else{
+                f.push_back(0.0);
+                f.push_back(0.0);
+                gap++;
+            }
+
+            res_sum.push_back(std::sqrt(dx*dx+dy*dy));
+
+        }
+
+    }
+    for(int i=0;i<vmask_begin.size();i++)
+    {
+        std::cout<<vmask_begin[i]<<"    ";
+    }
+    std::cout<<std::endl;
+    double resduial=0;
+    for(int i=0;i<res_sum.size();i++)
+    {
+//         std::cout<<"res_sum:"<<res_sum[i]<<std::endl;
+        resduial=res_sum[i]+resduial;
+    }
+
+    std::cout<<"res:"<<resduial/res_sum.size()<<std::endl;
+
+    std::string res_file = "/home/xzh/文档/simulate/BA_Ceres_outliers_part_gai/BA_Ceres_outliers_part_gai/data/res_L2_new.txt";
+            std::ofstream outputfile_res(res_file);
+
+//    std::string true_ord_file = "/Users/xuzihe/Desktop/C++代码/BA_Ceres_outliers_part_gai/data/true_ord.txt";
+//    std::ofstream outputfile_true_ord(true_ord_file);
+
+            for(int i=0;i<f.size();i++)
+            {
+                outputfile_res<<f[i]<<", ";
+                if(i%20==0) outputfile_res<<"\n";
+            }
+
+            outputfile_res.close();
+
+
+
+//     int no_zero=0;
+//     std::cout<<"vmask_delet.size():"<<vmask_delet.size()<<std::endl;
+//     for(int i=0;i<vmask_delet.size();i++)
+//     {
+//         if(vmask_delet[i]!=0) no_zero++;
+// //         std::cout<<vmask_delet[i]<<std::endl;
+// //         std::cout<<std::endl;
+//     }
+// std::cout<<"no_zero:"<<no_zero<<std::endl;
+//    res=Run_outliers(Point3D, Camera, Point2D_noise, Point2D_true,img_dis,
+//                     Camera_noise, Camera_iter,ncams_new, n3Dpts_new, vmask_new,
+//                     true, selectForres);
+
+//     Camera_mid = Camera_iter;
+//     Camera_iter=Camera_noise;
+//     Camera_tmp=Camera;
+    Camera_tmp=Camera_noise;
+    double tmp=0;
+    int iter_max=100;
+    for(int i=0;i<iter_max;i++)
+    {
+        std::cout<<"**********"<<i<<"**********"<<std::endl;
+//        Camera_tmp.clear();
+//        Camera_tmp=Camera_noise;
+//        res=Run_outliers(Point3D, Camera, Point2D_noise, Point2D_true,img_dis,
+//                         Camera_tmp, Camera_iter,ncams_new, n3Dpts_new, vmask_new,
+//                         true, selectForres);
+        res=Run_outliers(Point3D, Camera, Point2D_noise, Point2D_true,img_dis,
+                         Camera_tmp, Camera_iter,ncams_new, n3Dpts_new, vmask_begin, vmask_tmp, vmask_delet,
+                         use_MADN, selectForres, true);
+        Camera_tmp=Camera_iter;
+        if(abs(tmp-res)<0.01) break;
+        else tmp=res;
+//         std::cout<<res<<std::endl;
+
+    }
+    for(int i=0;i<vmask_begin.size();i++)
+    {
+        std::cout<<vmask_begin[i]<<"    ";
+    }
+    std::cout<<std::endl;
+
+
+    for(int i=0;i<ncams_new;i++)
+    {
+
+        for(int j=0;j<Camera_iter[i].size();j++)
+        {
+            std::cout<<Camera_iter[i][j]<<"    ";
+        }
+        std::cout<<std::endl;
+        for(int j=0;j<Camera_iter[i].size();j++)
+        {
+            std::cout<<Camera[i][j]<<"    ";
+        }
+        std::cout<<std::endl;
+    }
+
+    res_sum.clear();
+    gap=0;
+    f.clear();
+//     std::vector<double> res_sum;
+    for(int i=0;i<Point3D.size();i++)
+    {
+
+        util::point2d p;
+        Eigen::Vector3d point_tmp = Eigen::Vector3d(Point3D[i].x,Point3D[i].y,Point3D[i].z);
+//         std::cout<<"Point"<<i<<std::endl;
+//         std::cout<<"X:"<<point_tmp[0]<<" Y:"<<point_tmp[1]<<" Z:"<<point_tmp[2]<<std::endl;
+        for(int j=0;j<Camera.size();j++)
+        {
+            double x_o,y_o;
+            CameraParameters cam;
+            cam.s=Camera_iter[j][0];
+            cam.alpha=Camera_iter[j][1];
+            cam.beta=Camera_iter[j][2];
+            cam.gamma=Camera_iter[j][3];
+            cam.t0=Camera_iter[j][4];
+            cam.t1=Camera_iter[j][5];
+//             CameraParameters cam_tmp = Camera_init.cam[j];
+//            CameraParameters cam_tmp = Camera.cam[j];
+
+//            std::cout << "s:"<<cam_tmp.s<<" alpha:"<<cam_tmp.alpha
+//                      <<" beta:"<<cam_tmp.beta<<" gamma:"<<cam_tmp.gamma
+//                      <<" t0:"<<cam_tmp.t0<<" t1:"<<cam_tmp.t1<<std::endl;
+//            std::cout<<"X:"<<point_tmp[0]<<" Y:"<<point_tmp[1]<<" Z:"<<point_tmp[2]<<std::endl;
+            p = cam.Project(point_tmp);
+
+//             x_o=Point2D_true[i*Camera.size()+j].x;
+//             y_o=Point2D_true[i*Camera.size()+j].y;
+            x_o=Point2D_noise[i*Camera.size()+j].x;
+            y_o=Point2D_noise[i*Camera.size()+j].y;
+//             std::cout<<"X:"<<x_o<<" Y:"<<y_o<<std::endl;
+//             std::cout<<"X:"<<p.x<<" Y:"<<p.y<<std::endl;
+
+            double dx=p.x-x_o;
+            double dy=p.y-y_o;
+            if(vmask_begin[i*Camera.size()+j]){
+
+                f.push_back(dx);
+                f.push_back(dy);
+
+//                e_squares_list[i]
+            }
+            else{
+                f.push_back(0.0);
+                f.push_back(0.0);
+                gap++;
+            }
+
+//             std::cout<<"X:"<<dx<<" Y:"<<dy<<std::endl;
+
+            res_sum.push_back(std::sqrt(dx*dx+dy*dy));
+
+        }
+
+    }
+    resduial=0;
+    for(int i=0;i<res_sum.size();i++)
+    {
+//         std::cout<<"res_sum:"<<res_sum[i]<<std::endl;
+        resduial=res_sum[i]+resduial;
+    }
+
+    std::cout<<"res:"<<resduial/res_sum.size()<<std::endl;
+
+    std::string res_file2 = "/home/xzh/文档/simulate/BA_Ceres_outliers_part_gai/BA_Ceres_outliers_part_gai/data/res_MADN_part_new.txt";
+            std::ofstream outputfile_res2(res_file2);
+
+//    std::string true_ord_file = "/Users/xuzihe/Desktop/C++代码/BA_Ceres_outliers_part_gai/data/true_ord.txt";
+//    std::ofstream outputfile_true_ord(true_ord_file);
+
+            for(int i=0;i<f.size();i++)
+            {
+                outputfile_res2<<f[i]<<", ";
+                if(i%20==0) outputfile_res2<<"\n";
+            }
+
+            outputfile_res2.close();
+
+    gap=0;
+    f.clear();
+    Camera_tmp=Camera_noise;
+    std::cout<<"*************************************************************************************************"<<std::endl;
+//     Camera_tmp=Camera;
+//     Camera_tmp=Camera_noise;
+    for(int i=0;i<iter_max;i++)
+    {
+        std::cout<<"**********"<<i<<"**********"<<std::endl;
+//        Camera_tmp.clear();
+//        res=Run_outliers(Point3D, Camera, Point2D_noise, Point2D_true,img_dis,
+//                         Camera_tmp, Camera_iter,ncams_new, n3Dpts_new, vmask_new,
+//                         true, selectForres);
+        res=Run_outliers(Point3D, Camera, Point2D_noise, Point2D_true,img_dis,
+                         Camera_tmp, Camera_iter,ncams_new, n3Dpts_new, vmask_begin, vmask_tmp, vmask_delet,
+                         use_MADN, selectForres, false);
+        Camera_tmp=Camera_iter;
+        if(abs(tmp-res)<0.01) break;
+        else tmp=res;
+//         std::cout<<res<<std::endl;
+
+    }
+
+    res_sum.clear();
+//     std::vector<double> res_sum;
+    for(int i=0;i<Point3D.size();i++)
+    {
+
+        util::point2d p;
+        Eigen::Vector3d point_tmp = Eigen::Vector3d(Point3D[i].x,Point3D[i].y,Point3D[i].z);
+//         std::cout<<"Point"<<i<<std::endl;
+//         std::cout<<"X:"<<point_tmp[0]<<" Y:"<<point_tmp[1]<<" Z:"<<point_tmp[2]<<std::endl;
+        for(int j=0;j<Camera.size();j++)
+        {
+            double x_o,y_o;
+            CameraParameters cam;
+            cam.s=Camera_iter[j][0];
+            cam.alpha=Camera_iter[j][1];
+            cam.beta=Camera_iter[j][2];
+            cam.gamma=Camera_iter[j][3];
+            cam.t0=Camera_iter[j][4];
+            cam.t1=Camera_iter[j][5];
+//             CameraParameters cam_tmp = Camera_init.cam[j];
+//            CameraParameters cam_tmp = Camera.cam[j];
+
+//            std::cout << "s:"<<cam_tmp.s<<" alpha:"<<cam_tmp.alpha
+//                      <<" beta:"<<cam_tmp.beta<<" gamma:"<<cam_tmp.gamma
+//                      <<" t0:"<<cam_tmp.t0<<" t1:"<<cam_tmp.t1<<std::endl;
+//            std::cout<<"X:"<<point_tmp[0]<<" Y:"<<point_tmp[1]<<" Z:"<<point_tmp[2]<<std::endl;
+            p = cam.Project(point_tmp);
+
+//             x_o=Point2D_true[i*Camera.size()+j].x;
+//             y_o=Point2D_true[i*Camera.size()+j].y;
+            x_o=Point2D_noise[i*Camera.size()+j].x;
+            y_o=Point2D_noise[i*Camera.size()+j].y;
+//             std::cout<<"X:"<<x_o<<" Y:"<<y_o<<std::endl;
+//             std::cout<<"X:"<<p.x<<" Y:"<<p.y<<std::endl;
+
+            double dx=p.x-x_o;
+            double dy=p.y-y_o;
+            if(vmask_begin[i*Camera.size()+j]){
+
+                f.push_back(dx);
+                f.push_back(dy);
+
+//                e_squares_list[i]
+            }
+            else{
+                f.push_back(0.0);
+                f.push_back(0.0);
+                gap++;
+            }
+
+//             std::cout<<"X:"<<dx<<" Y:"<<dy<<std::endl;
+
+            res_sum.push_back(std::sqrt(dx*dx+dy*dy));
+
+        }
+
+    }
+    resduial=0;
+    for(int i=0;i<res_sum.size();i++)
+    {
+//         std::cout<<"res_sum:"<<res_sum[i]<<std::endl;
+        resduial=res_sum[i]+resduial;
+    }
+
+    std::cout<<"res:"<<resduial/res_sum.size()<<std::endl;
+std::string res_file3 = "/home/xzh/文档/simulate/BA_Ceres_outliers_part_gai/BA_Ceres_outliers_part_gai/data/res_MADN_all_new.txt";
+            std::ofstream outputfile_res3(res_file3);
+
+//    std::string true_ord_file = "/Users/xuzihe/Desktop/C++代码/BA_Ceres_outliers_part_gai/data/true_ord.txt";
+//    std::ofstream outputfile_true_ord(true_ord_file);
+
+            for(int i=0;i<f.size();i++)
+            {
+                outputfile_res3<<f[i]<<", ";
+                if(i%20==0) outputfile_res3<<"\n";
+            }
+
+            outputfile_res3.close();
+
+//    for(int i=0;i<ncams_new;i++)
+//    {
+//        for(int j=0;j<Camera_iter[i].size();j++)
+//        {
+//            std::cout<<Camera_iter[i][j]<<"    ";
+//        }
+//        std::cout<<std::endl;
+//        for(int j=0;j<Camera_iter[i].size();j++)
+//        {
+//            std::cout<<Camera_noise[i][j]<<"    ";
+//        }
+//        std::cout<<std::endl;
+//    }
+
+//    srand((unsigned)time(NULL));     //  类似于随机种子
+//    Run(motstr, imgpts, vmask, ncams, n3Dpts, false);
+//    Run(motstr, imgpts, vmask, ncams, n3Dpts, false);
+//    int max=1;
+//    for(int i=0;i<max;i++)
+//    {
+//        double residual=0;
+//        srand((unsigned)i);      //  类似于随机种子
+////        sum=Run(motstr, imgpts, vmask, ncams, n3Dpts, false);
+////        sum=sum+Run(motstr, imgpts, vmask, ncams, n3Dpts, true);
+////        residual=Run(motstr, imgpts, vmask, ncams, n3Dpts, true);
+////        residual=Run(motstr, imgpts, vmask, ncams, n3Dpts, false);
+//        residual_ver.push_back(residual);
+//        sum=sum+residual;
+//    }
+
+//    std::cout<<"sum:"<<sum/max<<std::endl;
+//    {
+//        std::cout<<motstr[i]<<" ";
+//    }
+
+//    std::cout<<std::endl;
+//    for(int i=0;i<residual_ver.size();i++)
+//    {
+//        std::cout<<" "<<residual_ver[i]<<", ";
+//    }
+//    std::cout<<std::endl;
+
+//     res_sum.clear();
+// //     std::vector<double> res_sum;
+//     for(int i=0;i<Point3D.size();i++)
+//     {
+//
+//         util::point2d p;
+//         Eigen::Vector3d point_tmp = Eigen::Vector3d(Point3D[i].x,Point3D[i].y,Point3D[i].z);
+// //         std::cout<<"Point"<<i<<std::endl;
+// //         std::cout<<"X:"<<point_tmp[0]<<" Y:"<<point_tmp[1]<<" Z:"<<point_tmp[2]<<std::endl;
+//         for(int j=0;j<Camera.size();j++)
+//         {
+//             double x_o,y_o;
+//             CameraParameters cam;
+//             cam.s=Camera_noise[j][0];
+//             cam.alpha=Camera_noise[j][1];
+//             cam.beta=Camera_noise[j][2];
+//             cam.gamma=Camera_noise[j][3];
+//             cam.t0=Camera_noise[j][4];
+//             cam.t1=Camera_noise[j][5];
+// //             CameraParameters cam_tmp = Camera_init.cam[j];
+// //            CameraParameters cam_tmp = Camera.cam[j];
+//
+// //            std::cout << "s:"<<cam_tmp.s<<" alpha:"<<cam_tmp.alpha
+// //                      <<" beta:"<<cam_tmp.beta<<" gamma:"<<cam_tmp.gamma
+// //                      <<" t0:"<<cam_tmp.t0<<" t1:"<<cam_tmp.t1<<std::endl;
+// //            std::cout<<"X:"<<point_tmp[0]<<" Y:"<<point_tmp[1]<<" Z:"<<point_tmp[2]<<std::endl;
+//             p = cam.Project(point_tmp);
+//
+//             x_o=Point2D_true[i*Camera.size()+j].x;
+//             y_o=Point2D_true[i*Camera.size()+j].y;
+// //             std::cout<<"X:"<<x_o<<" Y:"<<y_o<<std::endl;
+// //             std::cout<<"X:"<<p.x<<" Y:"<<p.y<<std::endl;
+//
+//             double dx=p.x-x_o;
+//             double dy=p.y-y_o;
+//
+// //             std::cout<<"X:"<<dx<<" Y:"<<dy<<std::endl;
+//
+//             res_sum.push_back(std::sqrt(dx*dx+dy*dy));
+//
+//         }
+//
+//     }
+//     resduial=0;
+//     for(int i=0;i<res_sum.size();i++)
+//     {
+// //         std::cout<<"res_sum:"<<res_sum[i]<<std::endl;
+//         resduial=res_sum[i]+resduial;
+//     }
+//
+//     std::cout<<"res:"<<resduial/res_sum.size()<<std::endl;
+
+    end = clock();
+    std::cout << "time = " << double(end-start)/CLOCKS_PER_SEC << "s" << std::endl;
+    return 0;
+}
+
