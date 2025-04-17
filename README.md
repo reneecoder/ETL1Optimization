@@ -1,6 +1,6 @@
 # Overview
 
-Cryo-electron tomography (cryo-ET) has emerged as an essential technique for imaging situ biological ultrastructures. Tilt series alignment is a crucial step in achieving high-resolution 3D reconstructions and employs bundle adjustment technique. This program uses an optimized smoothing gradient approach and provides an $L_1$-norm based robust tilt series alignment.
+Cryo-electron tomography (cryo-ET) has emerged as an essential technique for imaging situ biological ultrastructures. Tilt series alignment is a crucial step in achieving high-resolution 3D reconstructions and employs bundle adjustment technique. This program uses an optimized smoothing gradient approach and provides an $L_1$-norm based robust tilt series alignment. The code simulated data can be find in master branch.
 
 # Running ETL1Optimization
 
